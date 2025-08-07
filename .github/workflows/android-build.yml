@@ -77,6 +77,24 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -GNinja
           ninja install
+          
+      - name: Clone and build OpenBLAS for Android
+        run: |
+          git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
+          cd OpenBLAS
+          mkdir -p build-android && cd build-android
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
+            -DBUILD_SHARED_LIBS=ON \
+            -DNOFORTRAN=ON \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-21 \
+            -Wno-deprecated \
+            -GNinja > cmake_output_openblas.txt
+          cat cmake_output_openblas.txt
+          ninja install
+          ls -R $HOME/openblas-install
 
       - name: Clone FAISS repository
         run: git clone --depth 1 https://github.com/facebookresearch/faiss.git
