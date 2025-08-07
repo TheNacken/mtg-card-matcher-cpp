@@ -149,6 +149,7 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
             -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
+            -DFAISS_ENABLE_LAPACK=OFF \
             -GNinja
           ninja install
 
