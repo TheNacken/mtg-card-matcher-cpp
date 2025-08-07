@@ -111,12 +111,13 @@ jobs:
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
           export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          make TARGET=ARMV8 ONLY_CBLAS=1 \
-            CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-            HOSTCC=gcc \
-            AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
-            RANLIB=echo \
-            -j$(nproc)
+          make TARGET=ARMV8 \
+          CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+          HOSTCC=gcc \
+          AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
+          RANLIB=echo \
+          NO_LAPACK=0 \
+          -j$(nproc)
           make install PREFIX=$HOME/openblas-install
           ls -R $HOME/openblas-install
 
@@ -150,8 +151,8 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
             -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
-            -DFAISS_ENABLE_LAPACK=OFF \
-            -DLAPACK_FOUND=FALSE \
+            -DLAPACK_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
+            -DLAPACK_INCLUDE_DIR=$HOME/openblas-install/include \
             -GNinja
           ninja install
 
