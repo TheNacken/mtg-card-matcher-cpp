@@ -102,8 +102,10 @@ jobs:
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
           export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          export FCFLAGS="-O2 -fPIC"
+          # Override Fortran flags to avoid invalid -march
+          export FC=gfortran
           export FFLAGS="-O2 -fPIC"
+          export FCFLAGS="-O2 -fPIC"
           make TARGET=ARMV8 \
             CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
             HOSTCC=gcc \
