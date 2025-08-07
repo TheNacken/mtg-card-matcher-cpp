@@ -69,7 +69,7 @@ jobs:
             -DWITH_IPP=ON \
             -DWITH_OPENCL=OFF \
             -DOPENCV_GENERATE_PKGCONFIG=ON \
-            -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
+            -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
             -DOPENCV_ENABLE_NONFREE=ON \
             -DBUILD_opencv_wechat_qrcode=OFF \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
