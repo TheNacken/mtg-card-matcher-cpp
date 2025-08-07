@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ANDROID_NDK_VERSION: "25.1.8937393"
-      ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
-      ANDROID_NDK_HOME: ${{ runner.tool_cache }}/android-ndk
+      ANDROID_SDK_ROOT: ${{ env.HOME }}/android-sdk
+      ANDROID_NDK_HOME: ${{ env.HOME }}/android-ndk
       CMAKE_BUILD_TYPE: Release
-      OPENCV_INSTALL_DIR: ${{ runner.home }}/opencv-install
-      FAISS_INSTALL_DIR: ${{ runner.home }}/faiss-install
-      HDF5_INSTALL_DIR: ${{ runner.home }}/hdf5-install
+      OPENCV_INSTALL_DIR: ${{ env.HOME }}/opencv-install
+      FAISS_INSTALL_DIR: ${{ env.HOME }}/faiss-install
+      HDF5_INSTALL_DIR: ${{ env.HOME }}/hdf5-install
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
