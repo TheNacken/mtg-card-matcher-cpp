@@ -19,9 +19,9 @@ jobs:
         with:
           path: |
             /home/runner/hdf5-install
-          key: hdf5-${{ runner.os }}-${{ hashFiles('hdf5/**', '.github/workflows/android-build.yml') }}
+          key: hdf5-${{ runner.os }}-v1
           restore-keys: |
-            hdf5-${{ runner.os }}-
+            hdf5-${{ runner.os }}-v1
 
       - name: Install prerequisites
         run: |
@@ -62,9 +62,9 @@ jobs:
         with:
           path: |
             /home/runner/opencv-install
-          key: opencv-${{ runner.os }}-${{ hashFiles('opencv/**', 'opencv_contrib/**', '.github/workflows/android-build.yml') }}
+          key: opencv-${{ runner.os }}-v1
           restore-keys: |
-            opencv-${{ runner.os }}-
+            opencv-${{ runner.os }}-v1
 
 
       - name: Clone and build OpenCV
@@ -101,9 +101,9 @@ jobs:
         with:
           path: |
             /home/runner/openblas-install
-          key: openblas-${{ runner.os }}-${{ hashFiles('OpenBLAS/**', '.github/workflows/android-build.yml') }}
+          key: openblas-${{ runner.os }}-v1
           restore-keys: |
-            openblas-${{ runner.os }}-
+            openblas-${{ runner.os }}-v1
           
 
       - name: Clone and build OpenBLAS for Android
@@ -147,6 +147,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
+            -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
+            -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
             -GNinja
           ninja install
 
