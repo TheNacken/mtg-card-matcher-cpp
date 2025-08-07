@@ -40,12 +40,11 @@ jobs:
           unzip android-ndk-r25b-linux.zip -d $HOME
           mv $HOME/android-ndk-r25b $HOME/android-ndk
 
-      - name: Clone HDF5 repository
-        run: git clone --depth 1 https://github.com/HDFGroup/hdf5.git
 
-      - name: Configure and build HDF5
-        working-directory: hdf5
+      - name: Clone and build HDF5
         run: |
+          git clone --depth 1 https://github.com/HDFGroup/hdf5.git
+          cd hdf5
           mkdir -p build-android && cd build-android
           cmake .. \
             -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
@@ -67,14 +66,12 @@ jobs:
           restore-keys: |
             opencv-${{ runner.os }}-
 
-      - name: Clone OpenCV repositories
+
+      - name: Clone and build OpenCV
         run: |
           git clone --depth 1 https://github.com/opencv/opencv.git
           git clone --depth 1 https://github.com/opencv/opencv_contrib.git
-
-      - name: Configure and build OpenCV
-        working-directory: opencv
-        run: |
+          cd opencv
           mkdir -p build-android && cd build-android
           cmake .. \
             -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
@@ -108,6 +105,7 @@ jobs:
           restore-keys: |
             openblas-${{ runner.os }}-
           
+
       - name: Clone and build OpenBLAS for Android
         run: |
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
@@ -136,12 +134,11 @@ jobs:
           restore-keys: |
             faiss-${{ runner.os }}-
 
-      - name: Clone FAISS repository
-        run: git clone --depth 1 https://github.com/facebookresearch/faiss.git
 
-      - name: Configure and build FAISS
-        working-directory: faiss
+      - name: Clone and build FAISS
         run: |
+          git clone --depth 1 https://github.com/facebookresearch/faiss.git
+          cd faiss
           mkdir -p build-android && cd build-android
           cmake .. \
             -DFAISS_ENABLE_GPU=OFF \
@@ -171,3 +168,9 @@ jobs:
             -GNinja
    
           ninja
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-output
+          path: build/
