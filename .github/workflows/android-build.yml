@@ -9,9 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      ANDROID_NDK_VERSION: "25.1.8937393"
-      CMAKE_BUILD_TYPE: Release
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -21,13 +18,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget
 
+      - name: Set environment variables
+        run: |
+          echo "ANDROID_NDK_VERSION=25.1.8937393" >> $GITHUB_ENV
+          echo "CMAKE_BUILD_TYPE=Release" >> $GITHUB_ENV
+          echo "HOME_DIR=$HOME" >> $GITHUB_ENV
+
       - name: Download and extract Android NDK
         run: |
           wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip android-ndk-r25b-linux.zip -d $HOME
           mv $HOME/android-ndk-r25b $HOME/android-ndk
 
-      # Build HDF5 for Android
       - name: Clone HDF5 repository
         run: git clone --depth 1 https://github.com/HDFGroup/hdf5.git
 
@@ -45,7 +47,6 @@ jobs:
             -GNinja
           ninja install
 
-      # Build OpenCV for Android
       - name: Clone OpenCV repositories
         run: |
           git clone --depth 1 https://github.com/opencv/opencv.git
@@ -56,7 +57,7 @@ jobs:
         run: |
           mkdir -p build-android && cd build-android
           cmake .. \
-            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTS=OFF \
@@ -77,7 +78,6 @@ jobs:
             -GNinja
           ninja install
 
-      # Build FAISS for Android
       - name: Clone FAISS repository
         run: git clone --depth 1 https://github.com/facebookresearch/faiss.git
 
@@ -99,12 +99,11 @@ jobs:
             -GNinja
           ninja install
 
-      # Build main CMake project for Android
       - name: Configure and build project
         run: |
           mkdir -p build && cd build
           cmake .. \
-            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
@@ -112,4 +111,5 @@ jobs:
             -DFAISS_ROOT=$HOME/faiss-install \
             -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
             -GNinja
+   
           ninja
