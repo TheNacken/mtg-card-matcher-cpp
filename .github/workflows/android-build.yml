@@ -13,6 +13,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Cache HDF5 build
+      - name: Cache HDF5
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/hdf5-install
+          key: hdf5-${{ runner.os }}-${{ hashFiles('hdf5/**', '.github/workflows/android-build.yml') }}
+          restore-keys: |
+            hdf5-${{ runner.os }}-
+
       - name: Install prerequisites
         run: |
           sudo apt-get update
@@ -47,6 +57,16 @@ jobs:
             -GNinja
           ninja install
 
+      # Cache OpenCV build
+      - name: Cache OpenCV
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/opencv-install
+          key: opencv-${{ runner.os }}-${{ hashFiles('opencv/**', 'opencv_contrib/**', '.github/workflows/android-build.yml') }}
+          restore-keys: |
+            opencv-${{ runner.os }}-
+
       - name: Clone OpenCV repositories
         run: |
           git clone --depth 1 https://github.com/opencv/opencv.git
@@ -77,6 +97,16 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -GNinja
           ninja install
+
+      # Cache OpenBLAS build
+      - name: Cache OpenBLAS
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/openblas-install
+          key: openblas-${{ runner.os }}-${{ hashFiles('OpenBLAS/**', '.github/workflows/android-build.yml') }}
+          restore-keys: |
+            openblas-${{ runner.os }}-
           
       - name: Clone and build OpenBLAS for Android
         run: |
@@ -95,6 +125,16 @@ jobs:
           cat cmake_output_openblas.txt
           ninja install
           ls -R $HOME/openblas-install
+
+      # Cache FAISS build
+      - name: Cache FAISS
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/faiss-install
+          key: faiss-${{ runner.os }}-${{ hashFiles('faiss/**', '.github/workflows/android-build.yml') }}
+          restore-keys: |
+            faiss-${{ runner.os }}-
 
       - name: Clone FAISS repository
         run: git clone --depth 1 https://github.com/facebookresearch/faiss.git
