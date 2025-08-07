@@ -11,12 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ANDROID_NDK_VERSION: "25.1.8937393"
-      ANDROID_SDK_ROOT: ${{ env.HOME }}/android-sdk
-      ANDROID_NDK_HOME: ${{ env.HOME }}/android-ndk
       CMAKE_BUILD_TYPE: Release
-      OPENCV_INSTALL_DIR: ${{ env.HOME }}/opencv-install
-      FAISS_INSTALL_DIR: ${{ env.HOME }}/faiss-install
-      HDF5_INSTALL_DIR: ${{ env.HOME }}/hdf5-install
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -43,10 +38,10 @@ jobs:
         run: |
           mkdir -p build-android && cd build-android
           cmake .. \
-            -DCMAKE_INSTALL_PREFIX=${HDF5_INSTALL_DIR} \
+            -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTING=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
             -GNinja
@@ -64,7 +59,7 @@ jobs:
           mkdir -p build-android && cd build-android
           cmake .. \
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_INSTALL_PREFIX=${OPENCV_INSTALL_DIR} \
+            -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTS=OFF \
             -DBUILD_PERF_TESTS=OFF \
@@ -78,7 +73,7 @@ jobs:
             -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
             -DOPENCV_ENABLE_NONFREE=ON \
             -DBUILD_opencv_wechat_qrcode=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
             -GNinja
@@ -99,8 +94,8 @@ jobs:
             -DFAISS_ENABLE_BENCHMARKS=OFF \
             -DBUILD_TESTING=OFF \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${FAISS_INSTALL_DIR} \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DCMAKE_INSTALL_PREFIX=$HOME/faiss-install \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
             -GNinja
@@ -112,11 +107,11 @@ jobs:
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-21 \
-            -DOpenCV_DIR=${OPENCV_INSTALL_DIR}/sdk/native/jni \
-            -DFAISS_ROOT=${FAISS_INSTALL_DIR} \
-            -DCMAKE_PREFIX_PATH=${HDF5_INSTALL_DIR} \
+            -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
+            -DFAISS_ROOT=$HOME/faiss-install \
+            -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
             -GNinja
           ninja
