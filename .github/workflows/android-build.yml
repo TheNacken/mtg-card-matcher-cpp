@@ -135,6 +135,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/facebookresearch/faiss.git
           cd faiss
+          rm -rf build-android
           mkdir -p build-android && cd build-android
           cmake .. \
             -DFAISS_ENABLE_GPU=OFF \
@@ -150,6 +151,7 @@ jobs:
             -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
             -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
             -DFAISS_ENABLE_LAPACK=OFF \
+            -DLAPACK_FOUND=FALSE \
             -GNinja
           ninja install
 
