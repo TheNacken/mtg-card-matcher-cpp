@@ -13,12 +13,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Cache HDF5 build
       - name: Cache HDF5
         uses: actions/cache@v3
         with:
-          path: |
-            /home/runner/hdf5-install
+          path: /home/runner/hdf5-install
           key: hdf5-${{ runner.os }}-v1
           restore-keys: |
             hdf5-${{ runner.os }}-v1
@@ -26,7 +24,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget libopenblas-dev
+          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget libopenblas-dev gfortran
 
       - name: Set environment variables
         run: |
@@ -39,7 +37,6 @@ jobs:
           wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip android-ndk-r25b-linux.zip -d $HOME
           mv $HOME/android-ndk-r25b $HOME/android-ndk
-
 
       - name: Clone and build HDF5
         run: |
@@ -56,16 +53,13 @@ jobs:
             -GNinja
           ninja install
 
-      # Cache OpenCV build
       - name: Cache OpenCV
         uses: actions/cache@v3
         with:
-          path: |
-            /home/runner/opencv-install
+          path: /home/runner/opencv-install
           key: opencv-${{ runner.os }}-v1
           restore-keys: |
             opencv-${{ runner.os }}-v1
-
 
       - name: Clone and build OpenCV
         run: |
@@ -95,42 +89,38 @@ jobs:
             -GNinja
           ninja install
 
-      # Cache OpenBLAS build
       - name: Cache OpenBLAS
         uses: actions/cache@v3
         with:
-          path: |
-            /home/runner/openblas-install
+          path: /home/runner/openblas-install
           key: openblas-${{ runner.os }}-v1
           restore-keys: |
             openblas-${{ runner.os }}-v1
-          
 
       - name: Clone and build OpenBLAS for Android
         run: |
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
           export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          export FCFLAGS="-O2 -fPIC"
+          export FFLAGS="-O2 -fPIC"
           make TARGET=ARMV8 \
-          CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-          HOSTCC=gcc \
-          AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
-          RANLIB=echo \
-          NO_LAPACK=0 \
-          -j$(nproc)
+            CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+            HOSTCC=gcc \
+            AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
+            RANLIB=echo \
+            NO_LAPACK=0 \
+            -j$(nproc)
           make install PREFIX=$HOME/openblas-install
           ls -R $HOME/openblas-install
 
-      # Cache FAISS build
       - name: Cache FAISS
         uses: actions/cache@v3
         with:
-          path: |
-            /home/runner/faiss-install
+          path: /home/runner/faiss-install
           key: faiss-${{ runner.os }}-${{ hashFiles('faiss/**', '.github/workflows/android-build.yml') }}
           restore-keys: |
             faiss-${{ runner.os }}-
-
 
       - name: Clone and build FAISS
         run: |
@@ -168,7 +158,6 @@ jobs:
             -DFAISS_ROOT=$HOME/faiss-install \
             -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
             -GNinja
-   
           ninja
 
       - name: Upload build artifacts
