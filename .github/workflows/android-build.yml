@@ -110,20 +110,14 @@ jobs:
         run: |
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
-          mkdir -p build-android && cd build-android
-          cmake .. \
-            -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
-            -DBUILD_SHARED_LIBS=ON \
-            -DNOFORTRAN=ON \
-            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_EXE_LINKER_FLAGS="-lm" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-lm" \
-            -Wno-deprecated \
-            -GNinja > cmake_output_openblas.txt
-          cat cmake_output_openblas.txt
-          ninja install
+          export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          make TARGET=ARMV8 ONLY_CBLAS=1 \
+            CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+            HOSTCC=gcc \
+            AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
+            RANLIB=echo \
+            -j$(nproc)
+          make install PREFIX=$HOME/openblas-install
           ls -R $HOME/openblas-install
 
       # Cache FAISS build
