@@ -23,8 +23,8 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
+          # Note: gfortran intentionally removed; Android NDK does not provide a Fortran cross-compiler
           sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget libopenblas-dev
-          # NOTE: gfortran intentionally removed (Android NDK does not provide a Fortran cross-compiler)
 
       - name: Set environment variables
         run: |
@@ -102,15 +102,20 @@ jobs:
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
 
-          # Put NDK clang toolchain on PATH
-          export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          # Point to the NDK we downloaded earlier
+          export NDK_BUNDLE_DIR=$HOME/android-ndk
+          export PATH=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
-          # DO NOT set a host gfortran or FC here — Android NDK has no Fortran cross-compiler.
+          # Clean prior builds
+          make clean || true
+
+          # Use NDK clang cross-compiler for aarch64 (API level 21 here).
+          # IMPORTANT: do NOT install or export a host gfortran in the CI environment.
           # Let OpenBLAS detect "no Fortran" and use the C (f2c-converted) LAPACK implementation.
           make TARGET=ARMV8 \
-            CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+            CC=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
             HOSTCC=gcc \
-            AR=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
+            AR=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
             RANLIB=echo \
             NO_LAPACK=0 \
             -j$(nproc)
@@ -169,3 +174,4 @@ jobs:
         with:
           name: android-build-output
           path: build/
+          
