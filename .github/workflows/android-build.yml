@@ -1,5 +1,4 @@
 name: Android CMake Build
-
 on:
   push:
     branches: [main]
@@ -24,7 +23,8 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget libopenblas-dev gfortran
+          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget libopenblas-dev
+          # NOTE: gfortran intentionally removed (Android NDK does not provide a Fortran cross-compiler)
 
       - name: Set environment variables
         run: |
@@ -101,11 +101,12 @@ jobs:
         run: |
           git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
+
+          # Put NDK clang toolchain on PATH
           export PATH=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          # Override Fortran flags to avoid invalid -march
-          export FC=gfortran
-          export FFLAGS="-O2 -fPIC"
-          export FCFLAGS="-O2 -fPIC"
+
+          # DO NOT set a host gfortran or FC here — Android NDK has no Fortran cross-compiler.
+          # Let OpenBLAS detect "no Fortran" and use the C (f2c-converted) LAPACK implementation.
           make TARGET=ARMV8 \
             CC=$HOME/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
             HOSTCC=gcc \
@@ -113,6 +114,7 @@ jobs:
             RANLIB=echo \
             NO_LAPACK=0 \
             -j$(nproc)
+
           make install PREFIX=$HOME/openblas-install
           ls -R $HOME/openblas-install
 
