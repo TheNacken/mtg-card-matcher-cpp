@@ -116,8 +116,6 @@ jobs:
             CC=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
             HOSTCC=gcc \
             AR=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
-            RANLIB=echo \
-            NO_LAPACK=0 \
             -j$(nproc)
 
           make install PREFIX=$HOME/openblas-install
