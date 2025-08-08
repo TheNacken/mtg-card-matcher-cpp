@@ -1,4 +1,5 @@
 name: Android CMake Build
+
 on:
   push:
     branches: [main]
@@ -8,6 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -99,34 +101,33 @@ jobs:
 
       - name: Clone and build OpenBLAS for Android
         run: |
+          set -euo pipefail
           git clone --depth 1 --branch v0.3.30 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
-          mkdir build && cd build
+          mkdir -p build && cd build
 
-          # Point to the NDK we downloaded earlier
+          # point to the NDK we downloaded earlier
           export NDK_BUNDLE_DIR=$HOME/android-ndk
           export PATH=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
-          # Use NDK clang cross-compiler for aarch64 (API level 21 here).
-          # IMPORTANT: do NOT install or export a host gfortran in the CI environment.
-          # Let OpenBLAS detect "no Fortran" and use the C (f2c-converted) LAPACK implementation.
-          #make TARGET=ARMV7 \
-            #NOFORTRAN=1 \
-            #CC=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
-            #ARM_SOFTFP_ABI=1 \
-            #HOSTCC=gcc \
-            #AR=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
-            #-j$(nproc)
-
-          #make install PREFIX=$HOME/openblas-install
-          #ls -R $HOME/openblas-install
+          # Configure with CMake and set an install prefix so the static lib is installed where FAISS expects it
           cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_BUNDLE_DIR/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
-            -DTARGET=ARMV8 \
-            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk/build/cmake/android.toolchain.cmake \
+            -DANDROID_PLATFORM=android-21 \
             -DNOFORTRAN=1 \
-            -DANDROID_PLATFORM=android-23
-          cmake --build .
+            -DTARGET=ARMV8 \
+            -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
+            -G "Ninja"
+
+          # Build and install
+          cmake --build . --target install -j$(nproc)
+
+          # Confirm the static lib is present for downstream steps
+          echo "OpenBLAS install contents:"
+          ls -al $HOME/openblas-install || true
+          echo "Looking for libopenblas.a:"
+          ls -al $HOME/openblas-install/lib/libopenblas.a || true
 
       - name: Cache FAISS
         uses: actions/cache@v3
@@ -159,6 +160,17 @@ jobs:
             -DLAPACK_INCLUDE_DIR=$HOME/openblas-install/include \
             -GNinja
           ninja install
+
+      - name: Verify OpenBLAS library exists (fail early if missing)
+        run: |
+          if [ ! -f "$HOME/openblas-install/lib/libopenblas.a" ]; then
+            echo "::error file=./.github/workflows/android-build.yml::Required file $HOME/openblas-install/lib/libopenblas.a not found. OpenBLAS build/install likely failed."
+            ls -al $HOME || true
+            ls -al $HOME/openblas-install || true
+            exit 1
+          else
+            echo "Found $HOME/openblas-install/lib/libopenblas.a"
+          fi
 
       - name: Configure and build project
         run: |
