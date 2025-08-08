@@ -112,8 +112,10 @@ jobs:
           # Use NDK clang cross-compiler for aarch64 (API level 21 here).
           # IMPORTANT: do NOT install or export a host gfortran in the CI environment.
           # Let OpenBLAS detect "no Fortran" and use the C (f2c-converted) LAPACK implementation.
-          make TARGET=ARMV8 \
+          make TARGET=ARMV7 \
+            NOFORTRAN=1 \
             CC=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang \
+            ARM_SOFTFP_ABI=1 \
             HOSTCC=gcc \
             AR=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar \
             -j$(nproc)
