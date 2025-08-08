@@ -117,6 +117,7 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -DNOFORTRAN=1 \
             -DTARGET=ARMV8 \
+            -DBUILD_TESTING=OFF \
             -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
             -G "Ninja"
 
