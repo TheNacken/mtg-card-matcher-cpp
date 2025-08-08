@@ -99,7 +99,7 @@ jobs:
 
       - name: Clone and build OpenBLAS for Android
         run: |
-          git clone --depth 1 --branch v0.3.28 https://github.com/xianyi/OpenBLAS.git
+          git clone --depth 1 --branch v0.3.30 https://github.com/xianyi/OpenBLAS.git
           cd OpenBLAS
 
           # Point to the NDK we downloaded earlier
