@@ -48,6 +48,59 @@ jobs:
           echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
           echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
 
+      - name: Clone and build HDF5
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/HDFGroup/hdf5.git
+          cd hdf5
+          mkdir -p build-android && cd build-android
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=$ANDROID_ABI \
+            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+            -GNinja
+          ninja install
+
+      - name: Cache OpenCV
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/opencv-install
+          key: opencv-${{ runner.os }}-v1
+          restore-keys: |
+            opencv-${{ runner.os }}-v1
+
+      - name: Clone and build OpenCV
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/opencv/opencv.git
+          git clone --depth 1 https://github.com/opencv/opencv_contrib.git
+          cd opencv
+          mkdir -p build-android && cd build-android
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+            -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_PERF_TESTS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_python=OFF \
+            -DWITH_OPENMP=ON \
+            -DWITH_TBB=ON \
+            -DWITH_IPP=ON \
+            -DWITH_OPENCL=OFF \
+            -DOPENCV_GENERATE_PKGCONFIG=ON \
+            -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+            -DOPENCV_ENABLE_NONFREE=ON \
+            -DBUILD_opencv_wechat_qrcode=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=$ANDROID_ABI \
+            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+            -GNinja
+          ninja install
+          
       - name: Build OpenBLAS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
