@@ -58,7 +58,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTING=OFF \
-            -DHDF5_BUILD_CPP_LIB=ON \          # <-- enable C++ bindings
+            -DHDF5_BUILD_CPP_LIB=ON \
             -DHDF5_BUILD_TOOLS=OFF \
             -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ANDROID_ABI \
