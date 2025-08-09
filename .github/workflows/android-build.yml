@@ -11,26 +11,19 @@ jobs:
     env:
       ANDROID_NDK_VERSION: "24.0.8215888"
       ANDROID_CMAKE_VERSION: "3.18.1"
-      ANDROID_API_LEVEL: "21"
+      ANDROID_API_LEVEL: "29"
       ANDROID_ABI: "arm64-v8a"
       CMAKE_BUILD_TYPE: "Release"
+      OPENBLAS_TAG: "v0.3.21"
+      FAISS_TAG: "v1.7.2"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Cache HDF5
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/hdf5-install
-          key: hdf5-${{ runner.os }}-v1
-          restore-keys: |
-            hdf5-${{ runner.os }}-v1
-
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          # Note: gfortran intentionally removed; Android NDK does not provide a Fortran cross-compiler
           sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
 
       - name: Prepare Android SDK (commandline tools) and install packages
@@ -40,13 +33,14 @@ jobs:
           mkdir -p "$SDK_ROOT"
           cd "$SDK_ROOT"
           CLI_ZIP="commandlinetools-linux_latest.zip"
-          # download official commandline tools (file name may be updated by Google over time)
+          # official commandline tools (file name may be updated over time)
           wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
           mkdir -p "$SDK_ROOT/cmdline-tools/latest"
           mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
           rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
           export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          # accept licenses (ignore the benign broken-pipe from 'yes')
           yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
@@ -54,139 +48,140 @@ jobs:
           echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
           echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
 
-      - name: Clone and build HDF5
+      - name: Build OpenBLAS (per script)
+        env:
+          SDK_ROOT: ${{ env.SDK_ROOT }}
+          NDK_ROOT: ${{ env.NDK_ROOT }}
+          NINJA_BIN: ${{ env.NINJA_BIN }}
+          ANDROID_ABI: ${{ env.ANDROID_ABI }}
+          ANDROID_PLATFORM: ${{ env.ANDROID_API_LEVEL }}
+          OPENBLAS_TAG: ${{ env.OPENBLAS_TAG }}
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/HDFGroup/hdf5.git
-          cd hdf5
-          mkdir -p build-android && cd build-android
-          cmake .. \
-            -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DBUILD_TESTING=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -GNinja
-          ninja install
+          SCRIPT_DIR="$PWD"
+          WORK_DIR="$HOME/faiss_openblas_work"
+          SRC_DIR="$WORK_DIR/src"
+          BUILD_DIR="$WORK_DIR/build"
+          mkdir -p "$SRC_DIR" "$BUILD_DIR"
+          cd "$SRC_DIR"
 
-      - name: Cache OpenCV
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/opencv-install
-          key: opencv-${{ runner.os }}-v1
-          restore-keys: |
-            opencv-${{ runner.os }}-v1
-
-      - name: Clone and build OpenCV
-        run: |
-          set -euo pipefail
-          git clone --depth 1 https://github.com/opencv/opencv.git
-          git clone --depth 1 https://github.com/opencv/opencv_contrib.git
-          cd opencv
-          mkdir -p build-android && cd build-android
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-            -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DBUILD_TESTS=OFF \
-            -DBUILD_PERF_TESTS=OFF \
-            -DBUILD_EXAMPLES=OFF \
-            -DBUILD_opencv_python=OFF \
-            -DWITH_OPENMP=ON \
-            -DWITH_TBB=ON \
-            -DWITH_IPP=ON \
-            -DWITH_OPENCL=OFF \
-            -DOPENCV_GENERATE_PKGCONFIG=ON \
-            -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-            -DOPENCV_ENABLE_NONFREE=ON \
-            -DBUILD_opencv_wechat_qrcode=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -GNinja
-          ninja install
-
-      - name: Cache OpenBLAS
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/openblas-install
-          key: openblas-${{ runner.os }}-v1
-          restore-keys: |
-            openblas-${{ runner.os }}-v1
-
-      - name: Clone and build OpenBLAS for Android
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch v0.3.30 https://github.com/xianyi/OpenBLAS.git
-          cd OpenBLAS
-          mkdir -p build && cd build
-          # ensure NDK toolchain is on PATH for any cross tools
-          export NDK_BUNDLE_DIR=$NDK_ROOT
-          export PATH=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_BUNDLE_DIR/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -DNOFORTRAN=1 \
-            -DTARGET=ARMV8 \
-            -DONLY_CBLAS=1 \
-            -DBUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
-            -G "Ninja"
-          $NINJA_BIN
-          cmake --install . --prefix $HOME/openblas-install
-          echo "OpenBLAS install contents:"
-          ls -al $HOME/openblas-install || true
-          echo "Looking for libopenblas.a:"
-          ls -al $HOME/openblas-install/lib/libopenblas.a || true
-
-      - name: Cache FAISS
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/faiss-install
-          key: faiss-${{ runner.os }}-${{ hashFiles('faiss/**', '.github/workflows/android-build.yml') }}
-          restore-keys: |
-            faiss-${{ runner.os }}-
-
-      - name: Clone and build FAISS for Android
-        run: |
-          set -euo pipefail
-          git clone --depth 1 https://github.com/facebookresearch/faiss.git
-          cd faiss
-          rm -rf build-android
-          mkdir -p build-android && cd build-android
-          cmake .. \
-            -DFAISS_ENABLE_GPU=OFF \
-            -DFAISS_ENABLE_PYTHON=OFF \
-            -DFAISS_ENABLE_TESTS=OFF \
-            -DFAISS_ENABLE_BENCHMARKS=OFF \
-            -DBUILD_TESTING=OFF \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=$HOME/faiss-install \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
-            -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
-            -GNinja
-          $NINJA_BIN
-          cmake --install . --prefix $HOME/faiss-install
-          echo "FAISS install contents:"
-          ls -al $HOME/faiss-install || true
-
-      - name: Verify OpenBLAS library exists (fail early if missing)
-        run: |
-          if [ ! -f "$HOME/openblas-install/lib/libopenblas.a" ]; then
-            echo "::error file=./.github/workflows/android-build.yml::Required file $HOME/openblas-install/lib/libopenblas.a not found. OpenBLAS build/install likely failed."
-            ls -al $HOME || true
-            ls -al $HOME/openblas-install || true
-            exit 1
-          else
-            echo "Found $HOME/openblas-install/lib/libopenblas.a"
+          # clone OpenBLAS (same branch/tag as script)
+          if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
+            git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
 
-      - name: Configure and build project
+          # build OpenBLAS for the ABI (cmake args are the same as in the original script)
+          build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
+          mkdir -p "$build_subdir"
+          pushd "$build_subdir"
+          echo "Configuring OpenBLAS (ABI=${ANDROID_ABI})"
+          "$CMAKE_BIN" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${ANDROID_ABI} \
+            -DANDROID_NDK=${NDK_ROOT} \
+            -DANDROID_PLATFORM=android-${ANDROID_PLATFORM} \
+            -DCMAKE_ANDROID_ARCH_ABI=${ANDROID_ABI} \
+            -DCMAKE_ANDROID_NDK=${NDK_ROOT} \
+            -DCMAKE_MAKE_PROGRAM=${NINJA_BIN} \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_SYSTEM_VERSION=${ANDROID_PLATFORM} \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_CXX_FLAGS_RELEASE="-s" \
+            -DBUILD_STATIC_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \
+            -GNinja \
+            "$SRC_DIR/OpenBLAS"
+          ${NINJA_BIN}
+          popd
+
+          echo "::group::OpenBLAS build output"
+          ls -la "$BUILD_DIR/openblas_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+
+          # expose the lib path for subsequent steps via a marker file
+          echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+          echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
+
+      - name: Build FAISS (per script)
+        env:
+          SDK_ROOT: ${{ env.SDK_ROOT }}
+          NDK_ROOT: ${{ env.NDK_ROOT }}
+          NINJA_BIN: ${{ env.NINJA_BIN }}
+          ANDROID_ABI: ${{ env.ANDROID_ABI }}
+          ANDROID_PLATFORM: ${{ env.ANDROID_API_LEVEL }}
+          FAISS_TAG: ${{ env.FAISS_TAG }}
+        run: |
+          set -euo pipefail
+          WORK_DIR="$HOME/faiss_openblas_work"
+          SRC_DIR="$WORK_DIR/src"
+          BUILD_DIR="$WORK_DIR/build"
+          mkdir -p "$SRC_DIR" "$BUILD_DIR"
+          cd "$SRC_DIR"
+
+          # clone faiss (same branch/tag as script)
+          if [ ! -d "$SRC_DIR/faiss" ]; then
+            git clone --recursive -b "$FAISS_TAG" https://github.com/facebookresearch/faiss.git faiss
+          fi
+
+          # read openblas lib path written by previous step
+          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
+          if [ -z "$OPENBLAS_LIB_PATH" ]; then
+            echo "ERROR: openblas lib path not found (expected $WORK_DIR/openblas_lib_path.txt)"
+            exit 1
+          fi
+
+          # configure and build FAISS with the same cmake args as the script (note: we pass MKL_LIBRARIES as in the script)
+          abi_build_dir="$BUILD_DIR/faiss_${ANDROID_ABI}"
+          mkdir -p "$abi_build_dir"
+          pushd "$abi_build_dir"
+          echo "Configuring FAISS (ABI=${ANDROID_ABI})"
+          "$CMAKE_BIN" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${ANDROID_ABI} \
+            -DANDROID_NDK=${NDK_ROOT} \
+            -DANDROID_PLATFORM=android-${ANDROID_PLATFORM} \
+            -DCMAKE_ANDROID_ARCH_ABI=${ANDROID_ABI} \
+            -DCMAKE_ANDROID_NDK=${NDK_ROOT} \
+            -DCMAKE_MAKE_PROGRAM=${NINJA_BIN} \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_SYSTEM_VERSION=${ANDROID_PLATFORM} \
+            -DANDROID_STL=c++_static \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DBLA_VENDOR=OpenBLAS \
+            -DMKL_LIBRARIES=${OPENBLAS_LIB_PATH} \
+            -DCMAKE_CXX_FLAGS_RELEASE="-s" \
+            -GNinja \
+            "$SRC_DIR/faiss"
+          ${NINJA_BIN}
+          popd
+
+          echo "::group::FAISS build output"
+          ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+
+          # install into a faiss-install dir similar to script expectations
+          mkdir -p $HOME/faiss-install
+          # try to find libfaiss.so or libs under build tree and copy to install dir
+          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/ \; || true
+          echo "FAISS artifacts copied (if present) to $HOME/faiss-install"
+
+      - name: Verify OpenBLAS library exists
+        run: |
+          WORK_DIR="$HOME/faiss_openblas_work"
+          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
+          if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
+            echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
+            ls -al "$(dirname "$OPENBLAS_LIB_PATH")" || true
+            exit 1
+          fi
+          echo "Found OpenBLAS: $OPENBLAS_LIB_PATH"
+
+      - name: Configure and build project (final)
         run: |
           mkdir -p build && cd build
           cmake .. \
