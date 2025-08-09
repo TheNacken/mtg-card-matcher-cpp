@@ -58,11 +58,17 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTING=OFF \
+            -DHDF5_BUILD_CPP_LIB=ON \          # <-- enable C++ bindings
+            -DHDF5_BUILD_TOOLS=OFF \
             -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ANDROID_ABI \
             -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
             -GNinja
           ninja install
+          # debug: list installed files so we can see where the CMake config files live
+          echo "::group::HDF5 install listing"
+          find $HOME/hdf5-install -maxdepth 4 -type f -print || true
+          echo "::endgroup::"
 
       - name: Cache OpenCV
         uses: actions/cache@v3
@@ -100,7 +106,7 @@ jobs:
             -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
             -GNinja
           ninja install
-          
+
       - name: Build OpenBLAS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
@@ -117,12 +123,10 @@ jobs:
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
-
           # clone OpenBLAS (same branch/tag as script)
           if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
             git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
-
           # build OpenBLAS for the ABI (cmake args are the same as in the original script)
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
           mkdir -p "$build_subdir"
@@ -147,11 +151,9 @@ jobs:
             "$SRC_DIR/OpenBLAS"
           ${NINJA_BIN}
           popd
-
           echo "::group::OpenBLAS build output"
           ls -la "$BUILD_DIR/openblas_${ANDROID_ABI}" || true
           echo "::endgroup::"
-
           # expose the lib path for subsequent steps via a marker file
           echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
           echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
@@ -171,19 +173,16 @@ jobs:
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
-
           # clone faiss (same branch/tag as script)
           if [ ! -d "$SRC_DIR/faiss" ]; then
             git clone --recursive -b "$FAISS_TAG" https://github.com/facebookresearch/faiss.git faiss
           fi
-
           # read openblas lib path written by previous step
           OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
           if [ -z "$OPENBLAS_LIB_PATH" ]; then
             echo "ERROR: openblas lib path not found (expected $WORK_DIR/openblas_lib_path.txt)"
             exit 1
           fi
-
           # configure and build FAISS with the same cmake args as the script (note: we pass MKL_LIBRARIES as in the script)
           abi_build_dir="$BUILD_DIR/faiss_${ANDROID_ABI}"
           mkdir -p "$abi_build_dir"
@@ -212,11 +211,9 @@ jobs:
             "$SRC_DIR/faiss"
           ${NINJA_BIN}
           popd
-
           echo "::group::FAISS build output"
           ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
           echo "::endgroup::"
-
           # install into a faiss-install dir similar to script expectations
           mkdir -p $HOME/faiss-install
           # try to find libfaiss.so or libs under build tree and copy to install dir
@@ -245,6 +242,8 @@ jobs:
             -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
             -DFAISS_ROOT=$HOME/faiss-install \
             -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
+            -DHDF5_ROOT=$HOME/hdf5-install \            # <-- help CMake find HDF5
+            -DHDF5_DIR=$HOME/hdf5-install/lib/cmake/hdf5 \ # <-- optional, explicit path to hdf5-config.cmake
             -GNinja
           ninja
 
