@@ -47,7 +47,7 @@ jobs:
           mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
           rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
           export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null
+          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "NDK_ROOT=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
