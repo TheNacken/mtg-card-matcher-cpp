@@ -131,6 +131,30 @@ jobs:
           echo "Looking for libopenblas.a:"
           ls -al $HOME/openblas-install/lib/libopenblas.a || true
 
+      - name: Clone and build CLAPACK (C LAPACK port) for Android (provides Fortran-style LAPACK symbols)
+        run: |
+          set -euo pipefail
+          # make sure NDK is on PATH for the cmake toolchain
+          export NDK_BUNDLE_DIR=$HOME/android-ndk
+          export PATH=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+
+          # using a small C-translated LAPACK project for Android (clapack CMake port)
+          git clone --depth 1 https://github.com/syoyo/clapack-cmake-android-arm64.git clapack-android
+          mkdir -p clapack-android/build && cd clapack-android/build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_BUNDLE_DIR/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_INSTALL_PREFIX=$HOME/clapack-install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -GNinja
+          ninja install
+
+          echo "CLAPACK install contents:"
+          ls -al $HOME/clapack-install || true
+          echo "Looking for liblapack.a:"
+          ls -al $HOME/clapack-install/lib || true
+
       - name: Cache FAISS
         uses: actions/cache@v3
         with:
@@ -141,6 +165,7 @@ jobs:
 
       - name: Clone and build FAISS
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/facebookresearch/faiss.git
           cd faiss
           rm -rf build-android
@@ -158,8 +183,8 @@ jobs:
             -DANDROID_PLATFORM=android-21 \
             -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
             -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
-            -DLAPACK_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
-            -DLAPACK_INCLUDE_DIR=$HOME/openblas-install/include \
+            -DLAPACK_LIBRARIES=$HOME/clapack-install/lib/liblapack.a \
+            -DLAPACK_INCLUDE_DIR=$HOME/clapack-install/include \
             -GNinja
           ninja install
 
@@ -172,6 +197,17 @@ jobs:
             exit 1
           else
             echo "Found $HOME/openblas-install/lib/libopenblas.a"
+          fi
+
+      - name: Verify CLAPACK library exists (fail early if missing)
+        run: |
+          if [ ! -f "$HOME/clapack-install/lib/liblapack.a" ]; then
+            echo "::error file=./.github/workflows/android-build.yml::Required file $HOME/clapack-install/lib/liblapack.a not found. CLAPACK build/install likely failed."
+            ls -al $HOME || true
+            ls -al $HOME/clapack-install || true
+            exit 1
+          else
+            echo "Found $HOME/clapack-install/lib/liblapack.a"
           fi
 
       - name: Configure and build project
@@ -193,4 +229,3 @@ jobs:
         with:
           name: android-build-output
           path: build/
-          
