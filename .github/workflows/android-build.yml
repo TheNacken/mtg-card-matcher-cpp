@@ -115,91 +115,31 @@ jobs:
           restore-keys: |
             openblas-${{ runner.os }}-v1
 
-      - name: Build OpenBLAS + FAISS (combined script)
-        env:
-          SDK_ROOT: ${{ env.SDK_ROOT }}
-          NDK_ROOT: ${{ env.NDK_ROOT }}
-          CMAKE_BIN: ${{ env.CMAKE_BIN }}
-          NINJA_BIN: ${{ env.NINJA_BIN }}
-          ANDROID_ABI: ${{ env.ANDROID_ABI }}
-          ANDROID_API_LEVEL: ${{ env.ANDROID_API_LEVEL }}
+      - name: Clone and build OpenBLAS for Android
         run: |
           set -euo pipefail
-          cd $HOME
-
-          # Create CI-focused build script
-          cat > build_faiss_openblas_android.sh << 'SCRIPT'
-#!/usr/bin/env bash
-set -euo pipefail
-
-SDK_ROOT="${SDK_ROOT:-$HOME/android-sdk}"
-NDK_ROOT="${NDK_ROOT:-$SDK_ROOT/ndk/24.0.8215888}"
-CMAKE_BIN="${CMAKE_BIN:-$SDK_ROOT/cmake/3.18.1/bin/cmake}"
-NINJA_BIN="${NINJA_BIN:-$SDK_ROOT/cmake/3.18.1/bin/ninja}"
-MIN_SDK_VERSION="${ANDROID_API_LEVEL:-21}"
-ANDROID_ABI="${ANDROID_ABI:-arm64-v8a}"
-
-SRC_DIR="$HOME/faiss-openblas-src"
-BUILD_DIR="$HOME/faiss-openblas-build"
-OPENBLAS_TAG="v0.3.30"
-FAISS_TAG="v1.7.2"
-
-mkdir -p "$SRC_DIR" "$BUILD_DIR"
-cd "$SRC_DIR"
-
-if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
-  git clone --depth 1 --branch $OPENBLAS_TAG https://github.com/xianyi/OpenBLAS.git OpenBLAS
-fi
-if [ ! -d "$SRC_DIR/faiss" ]; then
-  git clone --depth 1 --branch $FAISS_TAG https://github.com/facebookresearch/faiss.git faiss
-fi
-
-# Build OpenBLAS (static)
-mkdir -p "$BUILD_DIR/openblas"
-pushd "$BUILD_DIR/openblas"
-cmake "$SRC_DIR/OpenBLAS" \
-  -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI="$ANDROID_ABI" \
-  -DANDROID_PLATFORM="android-${MIN_SDK_VERSION}" \
-  -DNOFORTRAN=1 \
-  -DTARGET=ARMV8 \
-  -DONLY_CBLAS=1 \
-  -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
-  -G "Ninja" -S "$SRC_DIR/OpenBLAS"
-$NINJA_BIN
-cmake --install . --prefix $HOME/openblas-install
-popd
-
-# Build FAISS (links OpenBLAS static lib)
-mkdir -p "$BUILD_DIR/faiss"
-pushd "$BUILD_DIR/faiss"
-cmake "$SRC_DIR/faiss" \
-  -DFAISS_ENABLE_GPU=OFF \
-  -DFAISS_ENABLE_PYTHON=OFF \
-  -DFAISS_ENABLE_TESTS=OFF \
-  -DFAISS_ENABLE_BENCHMARKS=OFF \
-  -DBUILD_TESTING=OFF \
-  -DBUILD_SHARED_LIBS=ON \
-  -DCMAKE_INSTALL_PREFIX=$HOME/faiss-install \
-  -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI="$ANDROID_ABI" \
-  -DANDROID_PLATFORM="android-${MIN_SDK_VERSION}" \
-  -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
-  -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
-  -G "Ninja" -S "$SRC_DIR/faiss"
-$NINJA_BIN
-cmake --install . --prefix $HOME/faiss-install
-popd
-
-echo "OpenBLAS install contents:"
-ls -lah $HOME/openblas-install || true
-echo "FAISS install contents:"
-ls -lah $HOME/faiss-install || true
-SCRIPT
-
-          chmod +x build_faiss_openblas_android.sh
-          ./build_faiss_openblas_android.sh
+          git clone --depth 1 --branch v0.3.30 https://github.com/xianyi/OpenBLAS.git
+          cd OpenBLAS
+          mkdir -p build && cd build
+          # ensure NDK toolchain is on PATH for any cross tools
+          export NDK_BUNDLE_DIR=$NDK_ROOT
+          export PATH=$NDK_BUNDLE_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_BUNDLE_DIR/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=$ANDROID_ABI \
+            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+            -DNOFORTRAN=1 \
+            -DTARGET=ARMV8 \
+            -DONLY_CBLAS=1 \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX=$HOME/openblas-install \
+            -G "Ninja"
+          $NINJA_BIN
+          cmake --install . --prefix $HOME/openblas-install
+          echo "OpenBLAS install contents:"
+          ls -al $HOME/openblas-install || true
+          echo "Looking for libopenblas.a:"
+          ls -al $HOME/openblas-install/lib/libopenblas.a || true
 
       - name: Cache FAISS
         uses: actions/cache@v3
@@ -208,6 +148,32 @@ SCRIPT
           key: faiss-${{ runner.os }}-${{ hashFiles('faiss/**', '.github/workflows/android-build.yml') }}
           restore-keys: |
             faiss-${{ runner.os }}-
+
+      - name: Clone and build FAISS for Android
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/facebookresearch/faiss.git
+          cd faiss
+          rm -rf build-android
+          mkdir -p build-android && cd build-android
+          cmake .. \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DFAISS_ENABLE_TESTS=OFF \
+            -DFAISS_ENABLE_BENCHMARKS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=$HOME/faiss-install \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=$ANDROID_ABI \
+            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+            -DBLAS_LIBRARIES=$HOME/openblas-install/lib/libopenblas.a \
+            -DBLAS_INCLUDE_DIR=$HOME/openblas-install/include \
+            -GNinja
+          $NINJA_BIN
+          cmake --install . --prefix $HOME/faiss-install
+          echo "FAISS install contents:"
+          ls -al $HOME/faiss-install || true
 
       - name: Verify OpenBLAS library exists (fail early if missing)
         run: |
