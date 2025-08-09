@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ANDROID_NDK_VERSION: "24.0.8215888"  # used to pick the NDK we install
+      ANDROID_NDK_VERSION: "24.0.8215888"
       ANDROID_CMAKE_VERSION: "3.18.1"
       ANDROID_API_LEVEL: "21"
       ANDROID_ABI: "arm64-v8a"
@@ -36,11 +36,11 @@ jobs:
       - name: Prepare Android SDK (commandline tools) and install packages
         run: |
           set -euo pipefail
-          export SDK_ROOT="$HOME/android-sdk"
+          SDK_ROOT="$HOME/android-sdk"
           mkdir -p "$SDK_ROOT"
           cd "$SDK_ROOT"
-          # Download Android commandline tools
           CLI_ZIP="commandlinetools-linux_latest.zip"
+          # download official commandline tools (file name may be updated by Google over time)
           wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
           mkdir -p "$SDK_ROOT/cmdline-tools/latest"
@@ -127,11 +127,11 @@ jobs:
           set -euo pipefail
           cd $HOME
 
-          # write the build script (adapted for CI)
-          cat > build_faiss_openblas_android.sh <<'EOF'
+          # Create CI-focused build script
+          cat > build_faiss_openblas_android.sh << 'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
-# CI-focused build script: build OpenBLAS static and FAISS (shared) for one ABI, install into $HOME/openblas-install and $HOME/faiss-install
+
 SDK_ROOT="${SDK_ROOT:-$HOME/android-sdk}"
 NDK_ROOT="${NDK_ROOT:-$SDK_ROOT/ndk/24.0.8215888}"
 CMAKE_BIN="${CMAKE_BIN:-$SDK_ROOT/cmake/3.18.1/bin/cmake}"
@@ -147,7 +147,6 @@ FAISS_TAG="v1.7.2"
 mkdir -p "$SRC_DIR" "$BUILD_DIR"
 cd "$SRC_DIR"
 
-# Clone if missing
 if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
   git clone --depth 1 --branch $OPENBLAS_TAG https://github.com/xianyi/OpenBLAS.git OpenBLAS
 fi
@@ -155,7 +154,7 @@ if [ ! -d "$SRC_DIR/faiss" ]; then
   git clone --depth 1 --branch $FAISS_TAG https://github.com/facebookresearch/faiss.git faiss
 fi
 
-# Build OpenBLAS (static) and install to $HOME/openblas-install
+# Build OpenBLAS (static)
 mkdir -p "$BUILD_DIR/openblas"
 pushd "$BUILD_DIR/openblas"
 cmake "$SRC_DIR/OpenBLAS" \
@@ -172,7 +171,7 @@ $NINJA_BIN
 cmake --install . --prefix $HOME/openblas-install
 popd
 
-# Build FAISS linking the OpenBLAS static lib
+# Build FAISS (links OpenBLAS static lib)
 mkdir -p "$BUILD_DIR/faiss"
 pushd "$BUILD_DIR/faiss"
 cmake "$SRC_DIR/faiss" \
@@ -193,13 +192,11 @@ $NINJA_BIN
 cmake --install . --prefix $HOME/faiss-install
 popd
 
-# Sanity prints
 echo "OpenBLAS install contents:"
 ls -lah $HOME/openblas-install || true
 echo "FAISS install contents:"
 ls -lah $HOME/faiss-install || true
-
-EOF
+SCRIPT
 
           chmod +x build_faiss_openblas_android.sh
           ./build_faiss_openblas_android.sh
