@@ -55,15 +55,20 @@ jobs:
           cd hdf5
           mkdir -p build-android && cd build-android
           cmake .. \
-            -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DBUILD_TESTING=OFF \
-            -DHDF5_BUILD_CPP_LIB=ON \
-            -DHDF5_BUILD_TOOLS=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -GNinja
+           -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
+           -DBUILD_SHARED_LIBS=OFF \
+           -DBUILD_TESTING=OFF \
+           -DHDF5_BUILD_CPP_LIB=ON \
+           -DHDF5_ENABLE_CXX=ON \
+           -DHDF5_BUILD_TOOLS=OFF \
+           -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+           -DANDROID_ABI=$ANDROID_ABI \
+           -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+           -DCMAKE_C_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang \
+           -DCMAKE_CXX_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ \
+           -DCMAKE_SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
+           -DCMAKE_INSTALL_LIBDIR=lib \
+           -GNinja
           ninja install
           # debug: list installed files so we can see where the CMake config files live
           echo "::group::HDF5 install listing"
