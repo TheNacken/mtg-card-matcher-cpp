@@ -184,11 +184,12 @@ jobs:
 
       - name: Prepare nlohmann/json for Android
         run: |
-          # Copy nlohmann/json.hpp to a location accessible during Android compilation
-          mkdir -p $HOME/nlohmann-json-install/include/nlohmann
-          cp /usr/include/nlohmann/json.hpp $HOME/nlohmann-json-install/include/nlohmann/
-          echo "Copied nlohmann/json.hpp to $HOME/nlohmann-json-install/include/nlohmann/"
-          ls -la $HOME/nlohmann-json-install/include/nlohmann/
+          # Copy entire nlohmann directory to a location accessible during Android compilation
+          mkdir -p $HOME/nlohmann-json-install/include
+          cp -rv /usr/include/nlohmann $HOME/nlohmann-json-install/include/
+          echo "Copied nlohmann directory to $HOME/nlohmann-json-install/include/"
+          echo "Contents of nlohmann-json-install:"
+          find $HOME/nlohmann-json-install/include/nlohmann -name "*.hpp" | head -10
 
       - name: Cache OpenBLAS and FAISS
         uses: actions/cache@v3
