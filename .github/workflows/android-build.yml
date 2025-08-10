@@ -64,69 +64,7 @@ jobs:
             yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
             sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           fi
-
-      - name: Cache HDF5
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/hdf5-install
-          key: hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
-          restore-keys: |
-            hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
-            hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-
-
-      - name: Clone and build HDF5
-        run: |
-          set -euo pipefail
           
-          # Check if HDF5 is already cached
-          if [ -d "$HOME/hdf5-install" ] && [ -f "$HOME/hdf5-install/lib/libhdf5.a" ]; then
-            echo "HDF5 found in cache, skipping build"
-            exit 0
-          fi
-          
-          echo "HDF5 not in cache, building..."
-          git clone --depth 1 https://github.com/HDFGroup/hdf5.git
-          cd hdf5
-          mkdir -p build-android && cd build-android
-          cmake .. \
-           -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
-           -DBUILD_SHARED_LIBS=OFF \
-           -DBUILD_TESTING=OFF \
-           -DHDF5_BUILD_CPP_LIB=ON \
-           -DHDF5_ENABLE_CXX=ON \
-           -DHDF5_BUILD_TOOLS=OFF \
-           -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-           -DANDROID_ABI=$ANDROID_ABI \
-           -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-           -DCMAKE_C_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang \
-           -DCMAKE_CXX_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ \
-           -DCMAKE_SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
-           -DCMAKE_INSTALL_LIBDIR=lib \
-           -GNinja
-          ninja install
-          # debug: list installed files so we can see where the CMake config files live
-          echo "::group::HDF5 install listing"
-          find $HOME/hdf5-install -maxdepth 4 -type f -print || true
-          echo "::endgroup::"
-          echo "=== list hdf5-install top-level ==="
-          ls -la $HOME/hdf5-install || true
-
-          echo "=== locate any lib files ==="
-          find $HOME/hdf5-install -type f -name "libhdf5*" -o -name "libhdf5*.a" -o -name "libhdf5*.so" -print || true
-
-          echo "=== locate any cmake config files ==="
-          find $HOME/hdf5-install -type f -name "*HDF5*Config.cmake" -o -name "hdf5-config.cmake" -print || true
-
-          echo "=== full tree (trim to 4 levels) ==="
-          find $HOME/hdf5-install -maxdepth 4 -type d -print
-
-      - name: Cache HDF5 immediately after build
-        if: success()
-        uses: actions/cache/save@v3
-        with:
-          path: /home/runner/hdf5-install
-          key: hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ github.run_id }}
-
       - name: Cache OpenCV
         uses: actions/cache@v3
         with:
