@@ -82,6 +82,7 @@ include_directories(${OpenCV_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
 if(NOT FAISS_PACKAGE_FOUND)
   include_directories(${FAISS_INCLUDE_DIR})
 endif()
+include_directories(${NLOHMANN_JSON_INCLUDE_DIR})
 
 # Source files
 set(SOURCES
