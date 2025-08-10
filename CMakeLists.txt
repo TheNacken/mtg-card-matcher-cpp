@@ -14,11 +14,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenCV REQUIRED)
 
 # FAISS: prefer config package, fall back to manual search via FAISS_ROOT/FAISS_INCLUDE_DIR
-set(FAISS_PACKAGE_FOUND OFF)
 find_package(faiss CONFIG QUIET)
-if(TARGET faiss)
-  set(FAISS_PACKAGE_FOUND ON)
-else()
+if(NOT TARGET faiss)
   message(STATUS "faiss CMake package not found. Falling back to manual lookup using FAISS_ROOT/FAISS_INCLUDE_DIR.")
   # Allow user/environment to provide FAISS_ROOT
   if(DEFINED ENV{FAISS_ROOT} AND NOT FAISS_ROOT)
@@ -39,6 +36,12 @@ else()
   if(NOT FAISS_LIB OR NOT FAISS_INCLUDE_DIR)
     message(FATAL_ERROR "FAISS not found. Provide faiss via package config (faiss_DIR) or set FAISS_ROOT and optionally FAISS_INCLUDE_DIR.")
   endif()
+  # Create imported target for consistency with package mode
+  add_library(faiss UNKNOWN IMPORTED)
+  set_target_properties(faiss PROPERTIES
+    IMPORTED_LOCATION "${FAISS_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FAISS_INCLUDE_DIR}"
+  )
 endif()
 
 # nlohmann_json: try package first, fall back to header-only
@@ -77,10 +80,8 @@ if(NOT SQLite3_FOUND)
   endif()
 endif()
 
-# Include directories
-include_directories(${OpenCV_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
-include_directories(${NLOHMANN_JSON_INCLUDE_DIR})
-include_directories(${FAISS_INCLUDE_DIR})
+# Include directories (only for non-target deps if needed; most are handled via targets)
+include_directories(${CMAKE_SOURCE_DIR})
 
 # Source files
 set(SOURCES
@@ -89,29 +90,18 @@ set(SOURCES
 
 # Library target (for Android NDK)
 add_library(matcher STATIC ${SOURCES})
+target_link_libraries(matcher PUBLIC
+  ${OpenCV_LIBS}
+  faiss
+  nlohmann_json::nlohmann_json
+  ${SQLITE_TARGET}
+)
 
 # Executable target
 add_executable(matcher_test main.cpp)
-
-# Statically link all libraries for matcher_test
-if(FAISS_PACKAGE_FOUND)
-  target_link_libraries(matcher_test
-      matcher
-      ${OpenCV_LIBS}
-      faiss
-      nlohmann_json::nlohmann_json
-      ${SQLITE_TARGET}
-      -static
-  )
-else()
-  target_link_libraries(matcher_test
-      matcher
-      ${OpenCV_LIBS}
-      ${FAISS_LIB}
-      nlohmann_json::nlohmann_json
-      ${SQLITE_TARGET}
-      -static
-  )
+target_link_libraries(matcher_test PRIVATE matcher)
+if(NOT ANDROID)
+  target_link_options(matcher_test PRIVATE -static)
 endif()
 
 # Android NDK specific settings
