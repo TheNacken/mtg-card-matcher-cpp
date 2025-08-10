@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find dependencies
 find_package(OpenCV REQUIRED)
+find_package(OpenMP REQUIRED) # Ensure OpenMP is found explicitly
 
 # FAISS: prefer config package, fall back to manual search via FAISS_ROOT/FAISS_INCLUDE_DIR
 find_package(faiss CONFIG QUIET)
@@ -95,12 +96,15 @@ target_link_libraries(matcher PUBLIC
   faiss
   nlohmann_json::nlohmann_json
   ${SQLITE_TARGET}
+  OpenMP::OpenMP_CXX # Explicitly link OpenMP target
 )
 
 # Executable target
 add_executable(matcher_test main.cpp)
 target_link_libraries(matcher_test PRIVATE matcher)
-if(NOT ANDROID)
+if(ANDROID)
+  target_link_options(matcher_test PRIVATE -static-openmp)
+else()
   target_link_options(matcher_test PRIVATE -static)
 endif()
 
