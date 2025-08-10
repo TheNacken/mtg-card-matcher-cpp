@@ -94,7 +94,7 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
-            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DBUILD_TESTS=OFF \
             -DBUILD_PERF_TESTS=OFF \
             -DBUILD_EXAMPLES=OFF \
@@ -252,7 +252,7 @@ jobs:
             -DANDROID_STL=c++_static \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
             -DBUILD_STATIC_LIBS=ON \
-            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -GNinja \
             "$SRC_DIR/OpenBLAS"
           ${NINJA_BIN}
@@ -317,7 +317,7 @@ jobs:
             -DFAISS_ENABLE_GPU=OFF \
             -DFAISS_ENABLE_PYTHON=OFF \
             -DBUILD_TESTING=OFF \
-            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DBLA_VENDOR=OpenBLAS \
             -DMKL_LIBRARIES=${OPENBLAS_LIB_PATH} \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
@@ -344,11 +344,11 @@ jobs:
           mkdir -p $HOME/faiss-install/lib/cmake/faiss
           cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
           # Minimal FAISS config
-          add_library(faiss STATIC IMPORTED)  # Changed to STATIC
+          add_library(faiss SHARED IMPORTED)  # Changed to SHARED
           set_target_properties(faiss PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.a"  # Changed to .a
+            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.so"  # Changed to .so
             INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
-            INTERFACE_LINK_LIBRARIES "${CMAKE_CURRENT_LIST_DIR}/../../libopenblas.a"  # Added to propagate OpenBLAS dependency
+            INTERFACE_LINK_LIBRARIES "${CMAKE_CURRENT_LIST_DIR}/../../libopenblas.so"  # Added to propagate OpenBLAS dependency
           )
           EOF
           echo "FAISS artifacts copied to $HOME/faiss-install"
@@ -362,8 +362,8 @@ jobs:
           echo "Contents of $HOME/faiss-install/include:"
           ls -la $HOME/faiss-install/include/ 2>/dev/null || echo "include directory not found"
           echo "Checking for required FAISS library file:"
-          if [ -f "$HOME/faiss-install/lib/libfaiss.a" ]; then  # Changed to .a
-            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.a"
+          if [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then  # Changed to .so
+            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.so"
           else
             echo "✗ FAISS library NOT found at expected location"
             echo "Searching for libfaiss files:"
@@ -384,14 +384,24 @@ jobs:
             echo "$OPENBLAS_LIB_PATH" > "$WORK_DIR/openblas_lib_path.txt"
           fi
           
-          if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
-            echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
+          # Also check for shared library
+          OPENBLAS_SO_PATH="$WORK_DIR/build/openblas_${ANDROID_ABI}/lib/libopenblas.so"
+          
+          if [ ! -f "$OPENBLAS_LIB_PATH" ] && [ ! -f "$OPENBLAS_SO_PATH" ]; then
+            echo "::error::Required OpenBLAS library not found at $OPENBLAS_LIB_PATH or $OPENBLAS_SO_PATH"
             echo "Searching for OpenBLAS libraries..."
             find "$WORK_DIR" -name "libopenblas*" -type f 2>/dev/null || true
             ls -al "$(dirname "$OPENBLAS_LIB_PATH")" 2>/dev/null || true
             exit 1
           fi
-          echo "Found OpenBLAS: $OPENBLAS_LIB_PATH"
+          
+          if [ -f "$OPENBLAS_LIB_PATH" ]; then
+            echo "Found OpenBLAS static library: $OPENBLAS_LIB_PATH"
+          fi
+          
+          if [ -f "$OPENBLAS_SO_PATH" ]; then
+            echo "Found OpenBLAS shared library: $OPENBLAS_SO_PATH"
+          fi
 
       - name: Configure and build project (final)
         run: |
@@ -424,6 +434,47 @@ jobs:
            -GNinja
           ninja
 
+      - name: Package shared libraries with executable
+        run: |
+          cd build
+          # Create a directory to hold all necessary files
+          mkdir -p packaged_app
+          
+          # Copy the executable
+          cp matcher_test packaged_app/ || echo "matcher_test not found"
+          
+          # Copy the shared library
+          cp libmatcher.so packaged_app/ || echo "libmatcher.so not found"
+          
+          # Copy OpenCV shared libraries
+          cp $HOME/opencv-install/sdk/native/libs/${ANDROID_ABI}/*.so packaged_app/ || echo "No OpenCV .so files found in expected location"
+          
+          # Copy FAISS shared libraries
+          cp $HOME/faiss-install/lib/*.so packaged_app/ || echo "No FAISS .so files found in expected location"
+          
+          # List what we've packaged
+          echo "::group::Packaged files"
+          ls -la packaged_app/
+          echo "::endgroup::"
+
+      - name: Find and list all shared libraries
+        run: |
+          echo "::group::Finding shared libraries"
+          find build -name "*.so" -type f | sort
+          echo "::endgroup::"
+          
+          # List OpenCV libraries
+          echo "::group::OpenCV libraries"
+          find $HOME/opencv-install -name "*.so" -type f 2>/dev/null | sort || echo "No OpenCV .so files found"
+          echo "::endgroup::"
+          
+          # List other dependency locations
+          echo "::group::Other dependency locations"
+          echo "FAISS install location:"
+          find $HOME/faiss-install -type f 2>/dev/null | head -20 || echo "No faiss-install directory found"
+          echo "SQLite3 install location:"
+          find $HOME/sqlite3-install -type f 2>/dev/null | head -20 || echo "No sqlite3-install directory found"
+          echo "::endgroup::"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -432,6 +483,11 @@ jobs:
           path: |
             build/
             build/**/*.so
+            build/packaged_app/**
+            ${{ env.HOME }}/opencv-install/sdk/native/libs/${{ env.ANDROID_ABI }}/*.so
+            ${{ env.HOME }}/opencv-install/sdk/native/libs/${{ env.ANDROID_ABI }}/lib/*.so
+            ${{ env.HOME }}/faiss-install/lib/*.so
             matcher.cpp
             matcher.h
             main.cpp
+            *.so

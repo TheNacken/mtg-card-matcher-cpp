@@ -23,7 +23,7 @@ if(NOT TARGET faiss)
   endif()
   # Try common lib locations under FAISS_ROOT
   find_library(FAISS_LIB
-    NAMES faiss libfaiss
+    NAMES faiss libfaiss faiss.so libfaiss.so
     HINTS ${FAISS_ROOT} ${FAISS_ROOT}/lib ${FAISS_ROOT}/lib64
   )
   # Try includes under FAISS_ROOT or an explicit FAISS_INCLUDE_DIR
@@ -123,6 +123,20 @@ if(ANDROID)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/android/libs/${ANDROID_ABI}"
     )
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    
+    # Set rpath for shared libraries
+    set_target_properties(matcher PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+    
+    # Also set rpath for the executable
+    set_target_properties(matcher_test PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
 endif()
 
 # Ensure all relevant files are included in the build artifact
