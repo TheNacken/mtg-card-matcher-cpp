@@ -88,8 +88,9 @@ set(SOURCES
     matcher.cpp
 )
 
+
 # Library target (for Android NDK)
-add_library(matcher STATIC ${SOURCES})
+add_library(matcher SHARED ${SOURCES})
 target_link_libraries(matcher PUBLIC
   ${OpenCV_LIBS}
   faiss
@@ -101,24 +102,19 @@ target_link_libraries(matcher PUBLIC
 add_executable(matcher_test main.cpp)
 target_link_libraries(matcher_test PRIVATE matcher)
 
-# Android-specific linking - DO NOT use full static linking
+# Use dynamic linking for all platforms
 if(ANDROID)
-  # Use selective static linking instead of full static linking
+  # Use dynamic linking for Android
   target_link_options(matcher_test PRIVATE 
     -Wl,--gc-sections
-    # Static link only for standard C++ library
-    -static-libstdc++
-    # Let Android system libraries be dynamically linked
   )
-  
   # Remove the problematic _GNU_SOURCE redefinition
   target_compile_definitions(matcher_test PRIVATE
     # Don't redefine _GNU_SOURCE
   )
-  
 else()
-  # Non-Android static linking (this works fine on regular Linux)
-  target_link_options(matcher_test PRIVATE -static)
+  # Use dynamic linking for non-Android
+  # Remove static link option
 endif()
 
 # Android NDK specific settings
@@ -128,3 +124,11 @@ if(ANDROID)
     )
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 endif()
+
+# Ensure all relevant files are included in the build artifact
+install(TARGETS matcher matcher_test
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+install(FILES matcher.h matcher.cpp main.cpp
+        DESTINATION src)

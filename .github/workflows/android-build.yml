@@ -429,4 +429,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-build-output
-          path: build/
+          path: |
+            build/
+            build/**/*.so
+            ../matcher.cpp
+            ../matcher.h
+            ../main.cpp
