@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    # Use GitHub's arm64 hosted Ubuntu runner
+    # Use GitHub's arm64 hosted Ubuntu runner to build natively on aarch64
     runs-on: ubuntu-22.04-arm
 
     env:
@@ -41,14 +41,16 @@ jobs:
       - name: Prepare Android SDK (commandline tools) and install packages
         run: |
           set -euo pipefail
+
           SDK_ROOT="$HOME/android-sdk"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-          echo "NDK_ROOT=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
-          echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
-          echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
+          # make NDK_ROOT and tool paths available to later steps
+          echo "NDK_ROOT=$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
+          echo "CMAKE_BIN=$SDK_ROOT/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake" >> $GITHUB_ENV
+          echo "NINJA_BIN=$SDK_ROOT/cmake/${ANDROID_CMAKE_VERSION}/bin/ninja" >> $GITHUB_ENV
 
           # Check if SDK is already cached
-          if [ -d "$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" ] && [ -d "$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}" ]; then
+          if [ -d "$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" ] && [ -d "$SDK_ROOT/cmake/${ANDROID_CMAKE_VERSION}" ]; then
             echo "Android SDK found in cache, skipping download"
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           else
@@ -64,8 +66,23 @@ jobs:
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
             # accept licenses (ignore the benign broken-pipe from 'yes')
             yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-            sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
+            sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${ANDROID_CMAKE_VERSION}" "ndk;${ANDROID_NDK_VERSION}" "build-tools;33.0.0"
           fi
+
+          # Detect host architecture and set the correct NDK prebuilt toolchain path
+          HOST_UNAME="$(uname -m)"
+          if [ "$HOST_UNAME" = "aarch64" ] || [ "$HOST_UNAME" = "arm64" ]; then
+            PREBUILT_TAG="linux-aarch64"
+          elif [ "$HOST_UNAME" = "x86_64" ] || [ "$HOST_UNAME" = "amd64" ]; then
+            PREBUILT_TAG="linux-x86_64"
+          else
+            # fallback to linux-x86_64 (adjust if you expect other hosts)
+            PREBUILT_TAG="linux-x86_64"
+          fi
+
+          PREBUILT_TOOLCHAIN="$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/${PREBUILT_TAG}"
+          echo "PREBUILT_TAG=${PREBUILT_TAG}" >> $GITHUB_ENV
+          echo "PREBUILT_TOOLCHAIN=${PREBUILT_TOOLCHAIN}" >> $GITHUB_ENV
 
       - name: Cache HDF5
         uses: actions/cache@v3
@@ -79,6 +96,7 @@ jobs:
       - name: Clone and build HDF5
         run: |
           set -euo pipefail
+
           # If cached, skip
           if [ -d "$HOME/hdf5-install" ] && [ -f "$HOME/hdf5-install/lib/libhdf5.a" ]; then
             echo "HDF5 found in cache, skipping build"
@@ -98,16 +116,25 @@ jobs:
            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
            -DANDROID_ABI=$ANDROID_ABI \
            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-           -DCMAKE_C_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-aarch64/bin/clang \
-           -DCMAKE_CXX_COMPILER=$NDK_ROOT/toolchains/llvm/prebuilt/linux-aarch64/bin/clang++ \
-           -DCMAKE_SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-aarch64/sysroot \
+           -DCMAKE_C_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang \
+           -DCMAKE_CXX_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang++ \
+           -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
            -DCMAKE_INSTALL_LIBDIR=lib \
            -GNinja
           ninja install
 
+          # debug: list installed files so we can see where the CMake config files live
           echo "::group::HDF5 install listing"
           find $HOME/hdf5-install -maxdepth 4 -type f -print || true
           echo "::endgroup::"
+          echo "=== list hdf5-install top-level ==="
+          ls -la $HOME/hdf5-install || true
+          echo "=== locate any lib files ==="
+          find $HOME/hdf5-install -type f -name "libhdf5*" -o -name "libhdf5*.a" -o -name "libhdf5*.so" -print || true
+          echo "=== locate any cmake config files ==="
+          find $HOME/hdf5-install -type f -name "*HDF5*Config.cmake" -o -name "hdf5-config.cmake" -print || true
+          echo "=== full tree (trim to 4 levels) ==="
+          find $HOME/hdf5-install -maxdepth 4 -type d -print
 
       - name: Cache HDF5 immediately after build
         if: success()
@@ -129,6 +156,7 @@ jobs:
       - name: Clone and build OpenCV
         run: |
           set -euo pipefail
+
           if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
             echo "OpenCV found in cache, skipping build"
             exit 0
@@ -157,6 +185,9 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=$ANDROID_ABI \
             -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+            -DCMAKE_C_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang \
+            -DCMAKE_CXX_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang++ \
+            -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
             -GNinja
           ninja install
 
@@ -194,6 +225,7 @@ jobs:
           BUILD_DIR="$WORK_DIR/build"
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
 
+          # Check if OpenBLAS is already cached
           if [ -f "$build_subdir/lib/libopenblas.a" ]; then
             echo "OpenBLAS found in cache, skipping build"
             echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
@@ -205,10 +237,12 @@ jobs:
           SRC_DIR="$WORK_DIR/src"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
+          # clone OpenBLAS (same branch/tag as script)
           if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
             git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
 
+          # build OpenBLAS for the ABI
           mkdir -p "$build_subdir"
           pushd "$build_subdir"
           echo "Configuring OpenBLAS (ABI=${ANDROID_ABI})"
@@ -224,6 +258,9 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Android \
             -DCMAKE_SYSTEM_VERSION=${ANDROID_PLATFORM} \
             -DANDROID_STL=c++_static \
+            -DCMAKE_C_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang \
+            -DCMAKE_CXX_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang++ \
+            -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
             -DBUILD_STATIC_LIBS=ON \
             -DBUILD_SHARED_LIBS=OFF \
@@ -231,6 +268,11 @@ jobs:
             "$SRC_DIR/OpenBLAS"
           ${NINJA_BIN}
           popd
+
+          echo "::group::OpenBLAS build output"
+          ls -la "$BUILD_DIR/openblas_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+          # expose the lib path for subsequent steps via a marker file
           echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
           echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
 
@@ -253,25 +295,30 @@ jobs:
           set -euo pipefail
           WORK_DIR="$HOME/faiss_openblas_work"
 
+          # Check if FAISS is already cached
           if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
             echo "FAISS found in cache, skipping build"
             exit 0
           fi
 
+          echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
+          # clone faiss (same branch/tag as script)
           if [ ! -d "$SRC_DIR/faiss" ]; then
             git clone --recursive -b "$FAISS_TAG" https://github.com/facebookresearch/faiss.git faiss
           fi
 
+          # read openblas lib path written by previous step
           OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
           if [ -z "$OPENBLAS_LIB_PATH" ]; then
             echo "ERROR: openblas lib path not found (expected $WORK_DIR/openblas_lib_path.txt)"
             exit 1
           fi
 
+          # configure and build FAISS
           abi_build_dir="$BUILD_DIR/faiss_${ANDROID_ABI}"
           mkdir -p "$abi_build_dir"
           pushd "$abi_build_dir"
@@ -294,14 +341,24 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DBLA_VENDOR=OpenBLAS \
             -DMKL_LIBRARIES=${OPENBLAS_LIB_PATH} \
+            -DCMAKE_C_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang \
+            -DCMAKE_CXX_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang++ \
+            -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
             -GNinja \
             "$SRC_DIR/faiss"
           ${NINJA_BIN}
           popd
 
+          echo "::group::FAISS build output"
+          ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+
+          # install into a faiss-install dir similar to script expectations
           mkdir -p $HOME/faiss-install
+          # try to find libfaiss.so or libs under build tree and copy to install dir
           find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/ \; || true
+          echo "FAISS artifacts copied (if present) to $HOME/faiss-install"
 
       - name: Cache FAISS immediately after build
         if: success()
@@ -315,7 +372,11 @@ jobs:
       - name: Verify OpenBLAS library exists
         run: |
           WORK_DIR="$HOME/faiss_openblas_work"
+
+          # Try to get the path from the marker file first
           OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt 2>/dev/null || true)"
+
+          # If not found in marker file, try to find it in the expected location
           if [ -z "$OPENBLAS_LIB_PATH" ]; then
             OPENBLAS_LIB_PATH="$WORK_DIR/build/openblas_${ANDROID_ABI}/lib/libopenblas.a"
             echo "$OPENBLAS_LIB_PATH" > "$WORK_DIR/openblas_lib_path.txt"
@@ -323,6 +384,7 @@ jobs:
 
           if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
             echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
+            echo "Searching for OpenBLAS libraries..."
             find "$WORK_DIR" -name "libopenblas*" -type f 2>/dev/null || true
             ls -al "$(dirname "$OPENBLAS_LIB_PATH")" 2>/dev/null || true
             exit 1
@@ -344,6 +406,9 @@ jobs:
            -DHDF5_DIR=$HOME/hdf5-install/lib/cmake/hdf5 \
            -DHDF5_USE_STATIC_LIBRARIES=ON \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
+           -DCMAKE_C_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang \
+           -DCMAKE_CXX_COMPILER=$PREBUILT_TOOLCHAIN/bin/clang++ \
+           -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
            -GNinja
           ninja
 
