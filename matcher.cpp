@@ -1,3 +1,4 @@
+
 #include "matcher.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
@@ -115,16 +116,16 @@ std::string match(const std::string& imagePath) {
     int n_queries = query_descriptors.rows;
 
     // Perform Faiss search (k=2 for Lowe's ratio test)
-    std::vector<float> distances(n_queries * 2);
+    std::vector<int32_t> distances(n_queries * 2);
     std::vector<int64_t> indices(n_queries * 2);
     index->search(n_queries, query_descriptors.data, 2, distances.data(), indices.data());
 
     // Apply Lowe's ratio test
-    std::vector<std::pair<int64_t, float>> good_matches;
+    std::vector<std::pair<int64_t, int32_t>> good_matches;
     const float ratio_thresh = 0.8f;
     for (int i = 0; i < n_queries; ++i) {
-        float d1 = distances[i * 2];
-        float d2 = distances[i * 2 + 1];
+        int32_t d1 = distances[i * 2];
+        int32_t d2 = distances[i * 2 + 1];
         if (d1 < ratio_thresh * d2) {
             good_matches.emplace_back(indices[i * 2], d1);
         }
@@ -141,7 +142,7 @@ std::string match(const std::string& imagePath) {
             if (idx >= range.first && idx < range.second) {
                 auto& score = card_scores[card_id];
                 score.first += 1;
-                score.second = (score.second * (score.first - 1) + dist) / score.first; // Update avg distance
+                score.second = (score.second * (score.first - 1) + static_cast<float>(dist)) / score.first; // Update avg distance
                 break;
             }
         }
