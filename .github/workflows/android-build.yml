@@ -246,17 +246,18 @@ jobs:
         run: |
           mkdir -p build && cd build
           cmake .. \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ANDROID_ABI \
-            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
-            -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
-            -DFAISS_ROOT=$HOME/faiss-install \
-            -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
-            -DHDF5_ROOT=$HOME/hdf5-install \            # <-- help CMake find HDF5
-            -DHDF5_DIR=$HOME/hdf5-install/lib/cmake/hdf5 \ # <-- optional, explicit path to hdf5-config.cmake
-            -GNinja
+           -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+           -DCMAKE_TOOLCHAIN_FILE=$NDK_ROOT/build/cmake/android.toolchain.cmake \
+           -DANDROID_ABI=$ANDROID_ABI \
+           -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
+           -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
+           -DFAISS_ROOT=$HOME/faiss-install \
+           -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
+           -DHDF5_ROOT=$HOME/hdf5-install \
+           -DHDF5_DIR=$HOME/hdf5-install/cmake \
+           -GNinja
           ninja
+
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
