@@ -41,8 +41,25 @@ else()
   endif()
 endif()
 
-# nlohmann_json
-find_package(nlohmann_json 3.2.0 REQUIRED)
+# nlohmann_json: try package first, fall back to header-only
+find_package(nlohmann_json 3.2.0 QUIET)
+if(NOT nlohmann_json_FOUND)
+  message(STATUS "nlohmann_json package not found. Looking for header-only installation.")
+  find_path(NLOHMANN_JSON_INCLUDE_DIR
+    NAMES nlohmann/json.hpp
+    HINTS /usr/include /usr/local/include ${CMAKE_PREFIX_PATH}/include
+    PATH_SUFFIXES nlohmann
+  )
+  if(NLOHMANN_JSON_INCLUDE_DIR)
+    message(STATUS "Found nlohmann/json.hpp at: ${NLOHMANN_JSON_INCLUDE_DIR}")
+    add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
+    set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}"
+    )
+  else()
+    message(FATAL_ERROR "nlohmann_json not found. Install nlohmann-json3-dev or provide via CMAKE_PREFIX_PATH.")
+  endif()
+endif()
 
 # SQLite3: try package, on Android fall back to NDK's sqlite3
 set(SQLITE_TARGET SQLite::SQLite3)

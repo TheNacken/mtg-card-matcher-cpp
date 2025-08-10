@@ -25,7 +25,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk openjdk-17-jre cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
+          sudo apt-get install -y openjdk-17-jdk openjdk-17-jre cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3 nlohmann-json3-dev
 
       - name: Cache Android SDK
         uses: actions/cache@v3
