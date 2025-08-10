@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     env:
       ANDROID_NDK_VERSION: "24.0.8215888"
       ANDROID_CMAKE_VERSION: "3.18.1"
