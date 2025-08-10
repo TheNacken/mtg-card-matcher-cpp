@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
+#include <faiss/Index.h>
 #include <faiss/IndexBinaryIVF.h>
 #include <faiss/index_io.h>
 #include <nlohmann/json.hpp>
@@ -114,16 +115,16 @@ std::string match(const std::string& imagePath) {
     int n_queries = query_descriptors.rows;
 
     // Perform Faiss search (k=2 for Lowe's ratio test)
-    std::vector<int> distances(n_queries * 2);
-    std::vector<faiss::idx_t> indices(n_queries * 2);
+    std::vector<float> distances(n_queries * 2);
+    std::vector<int64_t> indices(n_queries * 2);
     index->search(n_queries, query_descriptors.data, 2, distances.data(), indices.data());
 
     // Apply Lowe's ratio test
-    std::vector<std::pair<faiss::idx_t, int>> good_matches;
+    std::vector<std::pair<int64_t, float>> good_matches;
     const float ratio_thresh = 0.8f;
     for (int i = 0; i < n_queries; ++i) {
-        int d1 = distances[i * 2];
-        int d2 = distances[i * 2 + 1];
+        float d1 = distances[i * 2];
+        float d2 = distances[i * 2 + 1];
         if (d1 < ratio_thresh * d2) {
             good_matches.emplace_back(indices[i * 2], d1);
         }
