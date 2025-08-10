@@ -4,6 +4,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -64,7 +65,7 @@ jobs:
             yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
             sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           fi
-          
+
       - name: Cache OpenCV
         uses: actions/cache@v3
         with:
