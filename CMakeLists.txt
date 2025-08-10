@@ -89,25 +89,12 @@ set(SOURCES
 )
 
 # Library target (for Android NDK)
-add_library(matcher SHARED ${SOURCES})
-if(FAISS_PACKAGE_FOUND)
-  target_link_libraries(matcher
-      ${OpenCV_LIBS}
-      faiss
-      nlohmann_json::nlohmann_json
-      ${SQLITE_TARGET}
-  )
-else()
-  target_link_libraries(matcher
-      ${OpenCV_LIBS}
-      ${FAISS_LIB}
-      nlohmann_json::nlohmann_json
-      ${SQLITE_TARGET}
-  )
-endif()
+add_library(matcher STATIC ${SOURCES})
 
 # Executable target
 add_executable(matcher_test main.cpp)
+
+# Statically link all libraries for matcher_test
 if(FAISS_PACKAGE_FOUND)
   target_link_libraries(matcher_test
       matcher
@@ -115,6 +102,7 @@ if(FAISS_PACKAGE_FOUND)
       faiss
       nlohmann_json::nlohmann_json
       ${SQLITE_TARGET}
+      -static
   )
 else()
   target_link_libraries(matcher_test
@@ -123,6 +111,7 @@ else()
       ${FAISS_LIB}
       nlohmann_json::nlohmann_json
       ${SQLITE_TARGET}
+      -static
   )
 endif()
 
