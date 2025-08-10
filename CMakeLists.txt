@@ -13,8 +13,46 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find dependencies
 find_package(OpenCV REQUIRED)
 
-# DISABLE OpenMP for now to avoid linking issues
-# find_package(OpenMP REQUIRED) # Commented out
+# Handle OpenMP correctly for Android NDK
+if(ANDROID)
+    # For Android NDK, we need to use libomp (LLVM's OpenMP), not libgomp (GNU OpenMP)
+    # First, try to find OpenMP normally
+    find_package(OpenMP QUIET)
+    
+    if(OpenMP_FOUND)
+        # Override the problematic GNU OpenMP settings with LLVM libomp
+        set(OpenMP_CXX_FLAGS "-fopenmp")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        
+        # Create a proper OpenMP target for Android
+        if(NOT TARGET OpenMP::OpenMP_CXX)
+            add_library(OpenMP::OpenMP_CXX INTERFACE IMPORTED)
+            set_target_properties(OpenMP::OpenMP_CXX PROPERTIES
+                INTERFACE_COMPILE_OPTIONS "-fopenmp"
+                INTERFACE_LINK_LIBRARIES "-fopenmp"
+            )
+        else()
+            # Fix existing target to use libomp instead of libgomp
+            set_target_properties(OpenMP::OpenMP_CXX PROPERTIES
+                INTERFACE_COMPILE_OPTIONS "-fopenmp"
+                INTERFACE_LINK_LIBRARIES "-fopenmp"
+            )
+        endif()
+    else()
+        # Manual OpenMP setup for Android
+        add_library(OpenMP::OpenMP_CXX INTERFACE IMPORTED)
+        set_target_properties(OpenMP::OpenMP_CXX PROPERTIES
+            INTERFACE_COMPILE_OPTIONS "-fopenmp"
+            INTERFACE_LINK_LIBRARIES "-fopenmp"
+        )
+    endif()
+else()
+    # Regular OpenMP handling for non-Android
+    find_package(OpenMP REQUIRED)
+    if(NOT TARGET OpenMP::OpenMP_CXX)
+        message(FATAL_ERROR "OpenMP not found")
+    endif()
+endif()
 
 # FAISS: prefer config package, fall back to manual search via FAISS_ROOT/FAISS_INCLUDE_DIR
 find_package(faiss CONFIG QUIET)
@@ -98,17 +136,27 @@ target_link_libraries(matcher PUBLIC
   faiss
   nlohmann_json::nlohmann_json
   ${SQLITE_TARGET}
-  # OpenMP::OpenMP_CXX # Disabled for now
+  OpenMP::OpenMP_CXX
 )
 
 # Executable target
 add_executable(matcher_test main.cpp)
 target_link_libraries(matcher_test PRIVATE matcher)
 
-# Simplified linking for Android
+# Platform-specific linking options
 if(ANDROID)
-  target_link_options(matcher_test PRIVATE -static)
+  # For Android, use static linking but avoid conflicting flags
+  target_link_options(matcher_test PRIVATE 
+    -static
+    -Wl,--gc-sections
+  )
+  
+  # Remove any system library dependencies that aren't available on Android
+  target_compile_definitions(matcher_test PRIVATE
+    -D_GNU_SOURCE=0
+  )
 else()
+  # Non-Android static linking
   target_link_options(matcher_test PRIVATE -static)
 endif()
 
@@ -118,4 +166,9 @@ if(ANDROID)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/android/libs/${ANDROID_ABI}"
     )
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    
+    # Remove problematic flags that were causing libgomp/librt linking
+    string(REPLACE "-fopenmp=libgomp" "-fopenmp" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REPLACE "-lgomp" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    string(REPLACE "-lrt" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 endif()
