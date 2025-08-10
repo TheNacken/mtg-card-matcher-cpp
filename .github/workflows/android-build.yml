@@ -206,7 +206,7 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           
           # Check if FAISS is already cached
-          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
+          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
             echo "FAISS found in cache, skipping build"
             exit 0
           fi
@@ -274,6 +274,16 @@ jobs:
           )
           EOF
           echo "FAISS artifacts copied to $HOME/faiss-install"
+          
+          # Debug: List what was actually installed
+          echo "::group::FAISS installation verification"
+          echo "Contents of $HOME/faiss-install:"
+          find $HOME/faiss-install -type f | head -20
+          echo "Contents of $HOME/faiss-install/lib:"
+          ls -la $HOME/faiss-install/lib/ || echo "lib directory not found"
+          echo "Contents of $HOME/faiss-install/include:"
+          ls -la $HOME/faiss-install/include/ || echo "include directory not found"
+          echo "::endgroup::"
 
       - name: Verify OpenBLAS library exists
         run: |
@@ -299,6 +309,13 @@ jobs:
 
       - name: Configure and build project (final)
         run: |
+          echo "::group::Pre-build verification"
+          echo "FAISS installation check:"
+          ls -la $HOME/faiss-install/ || echo "faiss-install not found"
+          ls -la $HOME/faiss-install/lib/ || echo "faiss-install/lib not found"
+          ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
+          echo "::endgroup::"
+          
           mkdir -p build && cd build
           cmake .. \
            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
