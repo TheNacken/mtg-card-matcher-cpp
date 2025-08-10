@@ -13,36 +13,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find dependencies
 find_package(OpenCV REQUIRED)
 
-# Handle OpenMP with better Android support
-find_package(OpenMP REQUIRED)
-if(ANDROID)
-    # For Android, we need special handling of OpenMP
-    # Check if we can use static linking
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # Try static OpenMP first
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp=libgomp")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-openmp")
-        
-        # Alternative: Force static linking of libomp
-        set(OpenMP_CXX_FLAGS "-fopenmp")
-        set(OpenMP_CXX_LIB_NAMES "omp")
-        set(OpenMP_omp_LIBRARY "/system/lib64/libomp.so")
-        
-        # Create a custom OpenMP target for Android
-        if(NOT TARGET OpenMP::OpenMP_CXX)
-            add_library(OpenMP::OpenMP_CXX INTERFACE IMPORTED)
-            set_target_properties(OpenMP::OpenMP_CXX PROPERTIES
-                INTERFACE_COMPILE_OPTIONS "-fopenmp"
-                INTERFACE_LINK_OPTIONS "-fopenmp;-static-openmp"
-            )
-        endif()
-    endif()
-else()
-    # Regular OpenMP handling for non-Android
-    if(NOT TARGET OpenMP::OpenMP_CXX)
-        message(FATAL_ERROR "OpenMP not found")
-    endif()
-endif()
+# DISABLE OpenMP for now to avoid linking issues
+# find_package(OpenMP REQUIRED) # Commented out
 
 # FAISS: prefer config package, fall back to manual search via FAISS_ROOT/FAISS_INCLUDE_DIR
 find_package(faiss CONFIG QUIET)
@@ -126,29 +98,17 @@ target_link_libraries(matcher PUBLIC
   faiss
   nlohmann_json::nlohmann_json
   ${SQLITE_TARGET}
-  OpenMP::OpenMP_CXX
+  # OpenMP::OpenMP_CXX # Disabled for now
 )
 
 # Executable target
 add_executable(matcher_test main.cpp)
 target_link_libraries(matcher_test PRIVATE matcher)
 
-# Android-specific linking
+# Simplified linking for Android
 if(ANDROID)
-  # Try different approaches for static OpenMP linking
-  target_link_options(matcher_test PRIVATE 
-    -static-openmp
-    -Wl,--as-needed
-  )
-  
-  # Alternative: Force static linking of specific libraries
-  target_link_options(matcher_test PRIVATE
-    -Wl,-Bstatic
-    -lomp
-    -Wl,-Bdynamic
-  )
+  target_link_options(matcher_test PRIVATE -static)
 else()
-  # Non-Android static linking
   target_link_options(matcher_test PRIVATE -static)
 endif()
 
