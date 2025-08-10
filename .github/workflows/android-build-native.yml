@@ -27,7 +27,13 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk openjdk-17-jre cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
+          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
+
+      - name: Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Cache Android SDK
         uses: actions/cache@v3
