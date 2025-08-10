@@ -126,7 +126,7 @@ jobs:
           path: |
             /home/runner/faiss_openblas_work
             /home/runner/faiss-install
-          key: openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-${{ env.FAISS_TAG }}-v1
+          key: openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-${{ env.FAISS_TAG }}-v2
           restore-keys: |
             faiss-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.FAISS_TAG }}-
             openblas-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-
@@ -148,11 +148,11 @@ jobs:
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
           
           # Check if OpenBLAS is already cached
-          #if [ -f "$build_subdir/lib/libopenblas.a" ]; then
-          #  echo "OpenBLAS found in cache, skipping build"
-          #  echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
-          #  exit 0
-          #fi
+          if [ -f "$build_subdir/lib/libopenblas.a" ]; then
+            echo "OpenBLAS found in cache, skipping build"
+            echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+            exit 0
+          fi
           
           echo "OpenBLAS not in cache, building..."
           SCRIPT_DIR="$PWD"
@@ -206,10 +206,10 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           
           # Check if FAISS is already cached
-          #if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
-          #  echo "FAISS found in cache, skipping build"
-          #  exit 0
-          #fi
+          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
+            echo "FAISS found in cache, skipping build"
+            exit 0
+          fi
           
           echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
@@ -258,10 +258,22 @@ jobs:
           ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
           echo "::endgroup::"
           # install into a faiss-install dir similar to script expectations
-          mkdir -p $HOME/faiss-install
-          # try to find libfaiss.so or libs under build tree and copy to install dir
-          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/ \; || true
-          echo "FAISS artifacts copied (if present) to $HOME/faiss-install"
+          mkdir -p $HOME/faiss-install/lib $HOME/faiss-install/include
+          # Copy library files
+          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/lib/ \; || true
+          # Copy header files from source
+          cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/ || true
+          # Create a minimal CMake config for FAISS discovery
+          mkdir -p $HOME/faiss-install/lib/cmake/faiss
+          cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
+          # Minimal FAISS config
+          add_library(faiss SHARED IMPORTED)
+          set_target_properties(faiss PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.so"
+            INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
+          )
+          EOF
+          echo "FAISS artifacts copied to $HOME/faiss-install"
 
       - name: Verify OpenBLAS library exists
         run: |
@@ -294,11 +306,8 @@ jobs:
            -DANDROID_ABI=$ANDROID_ABI \
            -DANDROID_PLATFORM=android-${ANDROID_API_LEVEL} \
            -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
+           -Dfaiss_DIR=$HOME/faiss-install/lib/cmake/faiss \
            -DFAISS_ROOT=$HOME/faiss-install \
-           -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
-           -DHDF5_ROOT=$HOME/hdf5-install \
-           -DHDF5_DIR=$HOME/hdf5-install/lib/cmake/hdf5 \
-           -DHDF5_USE_STATIC_LIBRARIES=ON \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
            -GNinja
           ninja
