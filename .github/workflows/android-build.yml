@@ -120,6 +120,68 @@ jobs:
           path: /home/runner/opencv-install
           key: opencv-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-${{ github.run_id }}
 
+      - name: Cache SQLite3
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/sqlite3-install
+          key: sqlite3-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
+          restore-keys: |
+            sqlite3-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
+            sqlite3-${{ runner.os }}-${{ env.ANDROID_ABI }}-
+
+      - name: Build SQLite3 for Android
+        run: |
+          set -euo pipefail
+          
+          # Check if SQLite3 is already cached
+          if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
+            echo "SQLite3 found in cache, skipping build"
+            exit 0
+          fi
+          
+          echo "SQLite3 not in cache, building..."
+          cd /tmp
+          wget -q https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+          unzip -q sqlite-amalgamation-3460000.zip
+          cd sqlite-amalgamation-3460000
+          
+          # Create Android makefile
+          cat > Android.mk << 'EOF'
+          LOCAL_PATH := $(call my-dir)
+          include $(CLEAR_VARS)
+          LOCAL_MODULE := sqlite3
+          LOCAL_SRC_FILES := sqlite3.c
+          LOCAL_CFLAGS := -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE
+          include $(BUILD_STATIC_LIBRARY)
+          EOF
+          
+          # Use NDK to build
+          mkdir -p $HOME/sqlite3-install/lib $HOME/sqlite3-install/include
+          
+          # Compile sqlite3.c directly with clang
+          $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
+            -c sqlite3.c \
+            -o sqlite3.o \
+            -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE \
+            -O2
+          
+          # Create static library
+          $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs libsqlite3.a sqlite3.o
+          
+          # Install
+          cp libsqlite3.a $HOME/sqlite3-install/lib/
+          cp sqlite3.h $HOME/sqlite3-install/include/
+          cp sqlite3ext.h $HOME/sqlite3-install/include/
+          
+          echo "SQLite3 built and installed to $HOME/sqlite3-install"
+
+      - name: Cache SQLite3 immediately after build
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: /home/runner/sqlite3-install
+          key: sqlite3-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ github.run_id }}
+
       - name: Cache OpenBLAS and FAISS
         uses: actions/cache@v3
         with:
@@ -314,6 +376,9 @@ jobs:
           ls -la $HOME/faiss-install/ || echo "faiss-install not found"
           ls -la $HOME/faiss-install/lib/ || echo "faiss-install/lib not found"
           ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
+          echo "SQLite3 installation check:"
+          ls -la $HOME/sqlite3-install/ || echo "sqlite3-install not found"
+          ls -la $HOME/sqlite3-install/lib/ || echo "sqlite3-install/lib not found"
           echo "nlohmann_json header check:"
           find /usr/include -name "json.hpp" 2>/dev/null | head -5 || echo "json.hpp not found in /usr/include"
           echo "::endgroup::"
@@ -328,6 +393,9 @@ jobs:
            -Dfaiss_DIR=$HOME/faiss-install/lib/cmake/faiss \
            -DFAISS_ROOT=$HOME/faiss-install \
            -DNLOHMANN_JSON_INCLUDE_DIR=/usr/include \
+           -DCMAKE_PREFIX_PATH="$HOME/sqlite3-install" \
+           -DSQLite3_INCLUDE_DIR=$HOME/sqlite3-install/include \
+           -DSQLite3_LIBRARY=$HOME/sqlite3-install/lib/libsqlite3.a \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
            -GNinja
           ninja
