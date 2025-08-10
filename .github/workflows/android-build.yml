@@ -124,7 +124,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/sqlite3-install
-          key: sqlite3-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
+          key: sqlite3-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v2
           restore-keys: |
             sqlite3-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
             sqlite3-${{ runner.os }}-${{ env.ANDROID_ABI }}-
