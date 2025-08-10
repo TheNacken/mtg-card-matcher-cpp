@@ -148,11 +148,11 @@ jobs:
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
           
           # Check if OpenBLAS is already cached
-          if [ -f "$build_subdir/lib/libopenblas.a" ]; then
-            echo "OpenBLAS found in cache, skipping build"
-            echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
-            exit 0
-          fi
+          #if [ -f "$build_subdir/lib/libopenblas.a" ]; then
+          #  echo "OpenBLAS found in cache, skipping build"
+          #  echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+          #  exit 0
+          #fi
           
           echo "OpenBLAS not in cache, building..."
           SCRIPT_DIR="$PWD"
@@ -193,13 +193,6 @@ jobs:
           echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
           echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
 
-      - name: Cache OpenBLAS immediately after build
-        if: success()
-        uses: actions/cache/save@v3
-        with:
-          path: /home/runner/faiss_openblas_work
-          key: openblas-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-${{ github.run_id }}
-
       - name: Build FAISS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
@@ -213,10 +206,10 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           
           # Check if FAISS is already cached
-          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
-            echo "FAISS found in cache, skipping build"
-            exit 0
-          fi
+          #if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
+          #  echo "FAISS found in cache, skipping build"
+          #  exit 0
+          #fi
           
           echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
@@ -269,15 +262,6 @@ jobs:
           # try to find libfaiss.so or libs under build tree and copy to install dir
           find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/ \; || true
           echo "FAISS artifacts copied (if present) to $HOME/faiss-install"
-
-      - name: Cache FAISS immediately after build
-        if: success()
-        uses: actions/cache/save@v3
-        with:
-          path: |
-            /home/runner/faiss_openblas_work
-            /home/runner/faiss-install
-          key: faiss-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.FAISS_TAG }}-${{ github.run_id }}
 
       - name: Verify OpenBLAS library exists
         run: |
