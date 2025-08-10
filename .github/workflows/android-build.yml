@@ -134,10 +134,10 @@ jobs:
           set -euo pipefail
           
           # Check if SQLite3 is already cached
-          if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
-            echo "SQLite3 found in cache, skipping build"
-            exit 0
-          fi
+          #if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
+          #  echo "SQLite3 found in cache, skipping build"
+          #  exit 0
+          #fi
           
           echo "SQLite3 not in cache, building..."
           cd /tmp
