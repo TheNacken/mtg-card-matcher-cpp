@@ -2,10 +2,10 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
-#include <H5Cpp.h>
 #include <faiss/IndexBinaryIVF.h>
 #include <faiss/index_io.h>
 #include <nlohmann/json.hpp>
+#include <sqlite3.h>
 #include <filesystem>
 #include <stdexcept>
 #include <map>
@@ -14,17 +14,15 @@
 namespace mtg {
 
 static faiss::IndexBinaryIVF* index = nullptr;
-static H5::H5File* hdf5_file = nullptr;
-static std::vector<uint8_t> descriptors;
 static std::map<std::string, std::pair<int, int>> offsets;
 static std::map<std::string, nlohmann::json> metadata;
 
-void init(const std::string& indexPath, const std::string& hdf5Path) {
+void init(const std::string& indexPath, const std::string& sqlitePath) {
     if (!std::filesystem::exists(indexPath)) {
         throw std::runtime_error("Faiss index file does not exist: " + indexPath);
     }
-    if (!std::filesystem::exists(hdf5Path)) {
-        throw std::runtime_error("HDF5 file does not exist: " + hdf5Path);
+    if (!std::filesystem::exists(sqlitePath)) {
+        throw std::runtime_error("SQLite database file does not exist: " + sqlitePath);
     }
 
     index = dynamic_cast<faiss::IndexBinaryIVF*>(faiss::read_index_binary(indexPath.c_str()));
@@ -33,35 +31,59 @@ void init(const std::string& indexPath, const std::string& hdf5Path) {
     }
     index->nprobe = 8;
 
-    hdf5_file = new H5::H5File(hdf5Path, H5F_ACC_RDONLY);
-
-    std::cout << "Reading descriptors dataset..." << std::endl;
-    H5::DataSet desc_dataset = hdf5_file->openDataSet("descriptors");
-    H5::DataSpace desc_dataspace = desc_dataset.getSpace();
-    hsize_t dims[2];
-    desc_dataspace.getSimpleExtentDims(dims, nullptr);
-    std::cout << "Descriptors shape: (" << dims[0] << ", " << dims[1] << ")" << std::endl;
-    descriptors.resize(dims[0] * dims[1]);
-    desc_dataset.read(descriptors.data(), H5::PredType::NATIVE_UINT8);
-
-    std::cout << "Reading offsets dataset..." << std::endl;
-    H5::DataSet offsets_dataset = hdf5_file->openDataSet("offsets");
-    H5::StrType str_type(H5::PredType::C_S1, H5T_VARIABLE);
-    std::string offsets_json;
-    offsets_dataset.read(offsets_json, str_type);
-    nlohmann::json offsets_data = nlohmann::json::parse(offsets_json);
-    for (auto& [card_id, range] : offsets_data.items()) {
-        offsets[card_id] = {range[0].get<int>(), range[1].get<int>()};
+    // Open SQLite and load offsets and metadata into memory
+    sqlite3* db = nullptr;
+    if (sqlite3_open(sqlitePath.c_str(), &db) != SQLITE_OK) {
+        std::string err = sqlite3_errmsg(db);
+        if (db) sqlite3_close(db);
+        throw std::runtime_error("Failed to open SQLite DB: " + err);
     }
 
-    std::cout << "Reading metadata dataset..." << std::endl;
-    H5::DataSet metadata_dataset = hdf5_file->openDataSet("metadata");
-    std::string metadata_json;
-    metadata_dataset.read(metadata_json, str_type);
-    nlohmann::json metadata_data = nlohmann::json::parse(metadata_json);
-    for (auto& [card_id, meta] : metadata_data.items()) {
-        metadata[card_id] = meta;
+    // Load offsets
+    {
+        const char* sql = "SELECT card_id, start_idx, end_idx FROM offsets";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            std::string err = sqlite3_errmsg(db);
+            sqlite3_close(db);
+            throw std::runtime_error("Failed to prepare offsets query: " + err);
+        }
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* c_id = sqlite3_column_text(stmt, 0);
+            int start_idx = sqlite3_column_int(stmt, 1);
+            int end_idx = sqlite3_column_int(stmt, 2);
+            if (c_id) {
+                offsets[reinterpret_cast<const char*>(c_id)] = {start_idx, end_idx};
+            }
+        }
+        sqlite3_finalize(stmt);
     }
+
+    // Load metadata
+    {
+        const char* sql = "SELECT card_id, meta_json FROM metadata";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            std::string err = sqlite3_errmsg(db);
+            sqlite3_close(db);
+            throw std::runtime_error("Failed to prepare metadata query: " + err);
+        }
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* c_id = sqlite3_column_text(stmt, 0);
+            const unsigned char* c_json = sqlite3_column_text(stmt, 1);
+            if (c_id && c_json) {
+                try {
+                    nlohmann::json j = nlohmann::json::parse(reinterpret_cast<const char*>(c_json));
+                    metadata[reinterpret_cast<const char*>(c_id)] = j;
+                } catch (...) {
+                    // Ignore malformed rows
+                }
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_close(db);
 }
 
 std::string match(const std::string& imagePath) {
