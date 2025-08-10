@@ -45,11 +45,14 @@ endif()
 find_package(nlohmann_json 3.2.0 QUIET)
 if(NOT nlohmann_json_FOUND)
   message(STATUS "nlohmann_json package not found. Looking for header-only installation.")
-  find_path(NLOHMANN_JSON_INCLUDE_DIR
-    NAMES nlohmann/json.hpp
-    HINTS /usr/include /usr/local/include ${CMAKE_PREFIX_PATH}/include
-    PATH_SUFFIXES nlohmann
-  )
+  # Check if NLOHMANN_JSON_INCLUDE_DIR was provided via command line
+  if(NOT NLOHMANN_JSON_INCLUDE_DIR)
+    find_path(NLOHMANN_JSON_INCLUDE_DIR
+      NAMES nlohmann/json.hpp
+      HINTS /usr/include /usr/local/include ${CMAKE_PREFIX_PATH}/include
+      PATH_SUFFIXES nlohmann
+    )
+  endif()
   if(NLOHMANN_JSON_INCLUDE_DIR)
     message(STATUS "Found nlohmann/json.hpp at: ${NLOHMANN_JSON_INCLUDE_DIR}")
     add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)

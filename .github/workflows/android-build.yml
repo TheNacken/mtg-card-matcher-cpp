@@ -314,6 +314,8 @@ jobs:
           ls -la $HOME/faiss-install/ || echo "faiss-install not found"
           ls -la $HOME/faiss-install/lib/ || echo "faiss-install/lib not found"
           ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
+          echo "nlohmann_json header check:"
+          find /usr/include -name "json.hpp" 2>/dev/null | head -5 || echo "json.hpp not found in /usr/include"
           echo "::endgroup::"
           
           mkdir -p build && cd build
@@ -325,6 +327,7 @@ jobs:
            -DOpenCV_DIR=$HOME/opencv-install/sdk/native/jni \
            -Dfaiss_DIR=$HOME/faiss-install/lib/cmake/faiss \
            -DFAISS_ROOT=$HOME/faiss-install \
+           -DNLOHMANN_JSON_INCLUDE_DIR=/usr/include \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
            -GNinja
           ninja
