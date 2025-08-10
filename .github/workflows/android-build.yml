@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     env:
       ANDROID_NDK_VERSION: "24.0.8215888"
       ANDROID_CMAKE_VERSION: "3.18.1"
@@ -24,33 +24,67 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
+          sudo apt-get install -y openjdk-17-jdk openjdk-17-jre cmake ninja-build git build-essential libtbb-dev libomp-dev unzip wget python3
+
+      - name: Cache Android SDK
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/android-sdk
+          key: android-sdk-${{ env.ANDROID_NDK_VERSION }}-${{ env.ANDROID_CMAKE_VERSION }}-${{ env.ANDROID_API_LEVEL }}
+          restore-keys: |
+            android-sdk-${{ env.ANDROID_NDK_VERSION }}-${{ env.ANDROID_CMAKE_VERSION }}-
+            android-sdk-${{ env.ANDROID_NDK_VERSION }}-
 
       - name: Prepare Android SDK (commandline tools) and install packages
         run: |
           set -euo pipefail
           SDK_ROOT="$HOME/android-sdk"
-          mkdir -p "$SDK_ROOT"
-          cd "$SDK_ROOT"
-          CLI_ZIP="commandlinetools-linux_latest.zip"
-          # official commandline tools (file name may be updated over time)
-          wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
-          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
-          mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
-          rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
-          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-          # accept licenses (ignore the benign broken-pipe from 'yes')
-          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           echo "SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
           echo "NDK_ROOT=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
           echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
           echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
+          
+          # Check if SDK is already cached
+          if [ -d "$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" ] && [ -d "$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}" ]; then
+            echo "Android SDK found in cache, skipping download"
+            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          else
+            echo "Android SDK not in cache, downloading..."
+            mkdir -p "$SDK_ROOT"
+            cd "$SDK_ROOT"
+            CLI_ZIP="commandlinetools-linux_latest.zip"
+            # official commandline tools (file name may be updated over time)
+            wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+            unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
+            mkdir -p "$SDK_ROOT/cmdline-tools/latest"
+            mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
+            rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
+            export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+            # accept licenses (ignore the benign broken-pipe from 'yes')
+            yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+            sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
+          fi
+
+      - name: Cache HDF5
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/hdf5-install
+          key: hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
+          restore-keys: |
+            hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
+            hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-
 
       - name: Clone and build HDF5
         run: |
           set -euo pipefail
+          
+          # Check if HDF5 is already cached
+          if [ -d "$HOME/hdf5-install" ] && [ -f "$HOME/hdf5-install/lib/libhdf5.a" ]; then
+            echo "HDF5 found in cache, skipping build"
+            exit 0
+          fi
+          
+          echo "HDF5 not in cache, building..."
           git clone --depth 1 https://github.com/HDFGroup/hdf5.git
           cd hdf5
           mkdir -p build-android && cd build-android
@@ -86,17 +120,34 @@ jobs:
           echo "=== full tree (trim to 4 levels) ==="
           find $HOME/hdf5-install -maxdepth 4 -type d -print
 
+      - name: Cache HDF5 immediately after build
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: /home/runner/hdf5-install
+          key: hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ github.run_id }}
+
       - name: Cache OpenCV
         uses: actions/cache@v3
         with:
           path: /home/runner/opencv-install
-          key: opencv-${{ runner.os }}-v1
+          key: opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-v2
           restore-keys: |
-            opencv-${{ runner.os }}-v1
+            opencv-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-
+            opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
+            opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-
 
       - name: Clone and build OpenCV
         run: |
           set -euo pipefail
+          
+          # Check if OpenCV is already cached
+          if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
+            echo "OpenCV found in cache, skipping build"
+            exit 0
+          fi
+          
+          echo "OpenCV not in cache, building..."
           git clone --depth 1 https://github.com/opencv/opencv.git
           git clone --depth 1 https://github.com/opencv/opencv_contrib.git
           cd opencv
@@ -123,6 +174,26 @@ jobs:
             -GNinja
           ninja install
 
+      - name: Cache OpenCV immediately after build
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: /home/runner/opencv-install
+          key: opencv-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-${{ github.run_id }}
+
+      - name: Cache OpenBLAS and FAISS
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/faiss_openblas_work
+            /home/runner/faiss-install
+          key: openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-${{ env.FAISS_TAG }}-v1
+          restore-keys: |
+            faiss-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.FAISS_TAG }}-
+            openblas-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-
+            openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-
+            openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-
+
       - name: Build OpenBLAS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
@@ -133,10 +204,20 @@ jobs:
           OPENBLAS_TAG: ${{ env.OPENBLAS_TAG }}
         run: |
           set -euo pipefail
-          SCRIPT_DIR="$PWD"
           WORK_DIR="$HOME/faiss_openblas_work"
-          SRC_DIR="$WORK_DIR/src"
           BUILD_DIR="$WORK_DIR/build"
+          build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
+          
+          # Check if OpenBLAS is already cached
+          if [ -f "$build_subdir/lib/libopenblas.a" ]; then
+            echo "OpenBLAS found in cache, skipping build"
+            echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+            exit 0
+          fi
+          
+          echo "OpenBLAS not in cache, building..."
+          SCRIPT_DIR="$PWD"
+          SRC_DIR="$WORK_DIR/src"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
           # clone OpenBLAS (same branch/tag as script)
@@ -144,7 +225,6 @@ jobs:
             git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
           # build OpenBLAS for the ABI (cmake args are the same as in the original script)
-          build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
           mkdir -p "$build_subdir"
           pushd "$build_subdir"
           echo "Configuring OpenBLAS (ABI=${ANDROID_ABI})"
@@ -174,6 +254,13 @@ jobs:
           echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
           echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
 
+      - name: Cache OpenBLAS immediately after build
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: /home/runner/faiss_openblas_work
+          key: openblas-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-${{ github.run_id }}
+
       - name: Build FAISS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
@@ -185,6 +272,14 @@ jobs:
         run: |
           set -euo pipefail
           WORK_DIR="$HOME/faiss_openblas_work"
+          
+          # Check if FAISS is already cached
+          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/libfaiss.so" ]; then
+            echo "FAISS found in cache, skipping build"
+            exit 0
+          fi
+          
+          echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
@@ -236,13 +331,33 @@ jobs:
           find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -exec cp -v {} $HOME/faiss-install/ \; || true
           echo "FAISS artifacts copied (if present) to $HOME/faiss-install"
 
+      - name: Cache FAISS immediately after build
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            /home/runner/faiss_openblas_work
+            /home/runner/faiss-install
+          key: faiss-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.FAISS_TAG }}-${{ github.run_id }}
+
       - name: Verify OpenBLAS library exists
         run: |
           WORK_DIR="$HOME/faiss_openblas_work"
-          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
+          
+          # Try to get the path from the marker file first
+          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt 2>/dev/null || true)"
+          
+          # If not found in marker file, try to find it in the expected location
+          if [ -z "$OPENBLAS_LIB_PATH" ]; then
+            OPENBLAS_LIB_PATH="$WORK_DIR/build/openblas_${ANDROID_ABI}/lib/libopenblas.a"
+            echo "$OPENBLAS_LIB_PATH" > "$WORK_DIR/openblas_lib_path.txt"
+          fi
+          
           if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
             echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
-            ls -al "$(dirname "$OPENBLAS_LIB_PATH")" || true
+            echo "Searching for OpenBLAS libraries..."
+            find "$WORK_DIR" -name "libopenblas*" -type f 2>/dev/null || true
+            ls -al "$(dirname "$OPENBLAS_LIB_PATH")" 2>/dev/null || true
             exit 1
           fi
           echo "Found OpenBLAS: $OPENBLAS_LIB_PATH"
