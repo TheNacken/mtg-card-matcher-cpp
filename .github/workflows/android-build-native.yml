@@ -388,7 +388,8 @@ jobs:
            -DFAISS_ROOT=$HOME/faiss-install \
            -DCMAKE_PREFIX_PATH=$HOME/hdf5-install \
            -DHDF5_ROOT=$HOME/hdf5-install \
-           -DHDF5_DIR=$HOME/hdf5-install/lib/cmake/hdf5 \
+           -DHDF5_INCLUDE_DIRS=$HOME/hdf5-install/include \
+           -DHDF5_LIBRARIES=$HOME/hdf5-install/lib
            -DHDF5_USE_STATIC_LIBRARIES=ON \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
            -DCMAKE_SYSROOT=$PREBUILT_TOOLCHAIN/sysroot \
