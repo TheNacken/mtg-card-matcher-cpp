@@ -432,6 +432,6 @@ jobs:
           path: |
             build/
             build/**/*.so
-            ../matcher.cpp
-            ../matcher.h
-            ../main.cpp
+            matcher.cpp
+            matcher.h
+            main.cpp
