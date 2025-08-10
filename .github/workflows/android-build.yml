@@ -277,10 +277,10 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           
           # Check if FAISS is already cached
-          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
-            echo "FAISS found in cache, skipping build"
-            exit 0
-          fi
+          #if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/lib/libfaiss.a" ]; then  # Changed to check for .a (static)
+          #  echo "FAISS found in cache, skipping build"
+          #  exit 0
+          #fi
           
           echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
@@ -317,7 +317,7 @@ jobs:
             -DFAISS_ENABLE_GPU=OFF \
             -DFAISS_ENABLE_PYTHON=OFF \
             -DBUILD_TESTING=OFF \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \  # Changed to OFF for static build
             -DBLA_VENDOR=OpenBLAS \
             -DMKL_LIBRARIES=${OPENBLAS_LIB_PATH} \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
@@ -335,6 +335,8 @@ jobs:
           find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -print0 | while IFS= read -r -d '' file; do
             cp -v "$file" $HOME/faiss-install/lib/
           done
+          # Also copy OpenBLAS static lib to handle dependency propagation
+          cp -v "${OPENBLAS_LIB_PATH}" $HOME/faiss-install/lib/
           # Copy header files from source
           echo "Copying FAISS header files..."
           cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/
@@ -342,10 +344,11 @@ jobs:
           mkdir -p $HOME/faiss-install/lib/cmake/faiss
           cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
           # Minimal FAISS config
-          add_library(faiss SHARED IMPORTED)
+          add_library(faiss STATIC IMPORTED)  # Changed to STATIC
           set_target_properties(faiss PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.so"
+            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.a"  # Changed to .a
             INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
+            INTERFACE_LINK_LIBRARIES "${CMAKE_CURRENT_LIST_DIR}/../../libopenblas.a"  # Added to propagate OpenBLAS dependency
           )
           EOF
           echo "FAISS artifacts copied to $HOME/faiss-install"
@@ -359,8 +362,8 @@ jobs:
           echo "Contents of $HOME/faiss-install/include:"
           ls -la $HOME/faiss-install/include/ 2>/dev/null || echo "include directory not found"
           echo "Checking for required FAISS library file:"
-          if [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
-            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.so"
+          if [ -f "$HOME/faiss-install/lib/libfaiss.a" ]; then  # Changed to .a
+            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.a"
           else
             echo "✗ FAISS library NOT found at expected location"
             echo "Searching for libfaiss files:"
@@ -427,4 +430,3 @@ jobs:
         with:
           name: android-build-output
           path: build/
-
