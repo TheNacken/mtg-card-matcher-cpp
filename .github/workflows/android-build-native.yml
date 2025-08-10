@@ -89,23 +89,23 @@ jobs:
           echo "PREBUILT_TAG=${PREBUILT_TAG}" >> $GITHUB_ENV
           echo "PREBUILT_TOOLCHAIN=${PREBUILT_TOOLCHAIN}" >> $GITHUB_ENV
 
-      - name: Cache HDF5
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/hdf5-install
-          key: hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
-          restore-keys: |
-            hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
-            hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-
+      #- name: Cache HDF5
+      #  uses: actions/cache@v3
+     #   with:
+      #    path: /home/runner/hdf5-install
+      #    key: hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-v1
+       #   restore-keys: |
+       #     hdf5-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
+        #    hdf5-${{ runner.os }}-${{ env.ANDROID_ABI }}-
 
       - name: Clone and build HDF5
         run: |
           set -euo pipefail
 
-          if [ -d "$HOME/hdf5-install" ] && [ -f "$HOME/hdf5-install/lib/libhdf5.a" ]; then
-            echo "HDF5 found in cache, skipping build"
-            exit 0
-          fi
+          #if [ -d "$HOME/hdf5-install" ] && [ -f "$HOME/hdf5-install/lib/libhdf5.a" ]; then
+           # echo "HDF5 found in cache, skipping build"
+           # exit 0
+          #fi
 
           git clone --depth 1 https://github.com/HDFGroup/hdf5.git
           cd hdf5
