@@ -69,6 +69,17 @@ jobs:
           echo "::group::HDF5 install listing"
           find $HOME/hdf5-install -maxdepth 4 -type f -print || true
           echo "::endgroup::"
+          echo "=== list hdf5-install top-level ==="
+          ls -la $HOME/hdf5-install || true
+
+          echo "=== locate any lib files ==="
+          find $HOME/hdf5-install -type f -name "libhdf5*" -o -name "libhdf5*.a" -o -name "libhdf5*.so" -print || true
+
+          echo "=== locate any cmake config files ==="
+          find $HOME/hdf5-install -type f -name "*HDF5*Config.cmake" -o -name "hdf5-config.cmake" -print || true
+
+          echo "=== full tree (trim to 4 levels) ==="
+          find $HOME/hdf5-install -maxdepth 4 -type d -print
 
       - name: Cache OpenCV
         uses: actions/cache@v3
