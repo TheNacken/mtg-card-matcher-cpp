@@ -421,10 +421,41 @@ jobs:
            -GNinja
           ninja
 
+      - name: Collect native shared libs into build/native-libs
+        run: |
+          set -euo pipefail
+          ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
+          mkdir -p "${ABI_DIR}"
 
+          # Copy FAISS shared libraries (if present)
+          if [ -d "$HOME/faiss-install/lib" ]; then
+            echo "Copying FAISS libs..."
+            cp -v $HOME/faiss-install/lib/*.so "${ABI_DIR}/" || true
+          else
+            echo "Warning: $HOME/faiss-install/lib not found"
+          fi
+
+          # Copy OpenCV shared libs (if OpenCV built shared libs and available)
+          # (adjust path if your OpenCV libs are elsewhere)
+          if [ -d "$HOME/opencv-install/sdk/native/jni/libs/${{ env.ANDROID_ABI }}" ]; then
+            echo "Copying OpenCV libs..."
+            cp -v $HOME/opencv-install/sdk/native/jni/libs/${{ env.ANDROID_ABI }}/*.so "${ABI_DIR}/" || true
+          else
+            echo "No OpenCV shared libs found at expected location (likely built static)."
+          fi
+
+          # As a catch-all, search for libfaiss*.so anywhere under home and copy
+          echo "Searching for stray libfaiss*.so and copying..."
+          find $HOME -type f -name "libfaiss*.so" -exec cp -v {} "${ABI_DIR}/" \; || true
+
+          echo "Collected shared libs into ${ABI_DIR}"
+          
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-build-output
-          path: build/
+          path: |
+            build/
+            build/native-libs/
+            
 
