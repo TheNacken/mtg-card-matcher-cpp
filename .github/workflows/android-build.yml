@@ -421,137 +421,101 @@ jobs:
            -GNinja
           ninja
           
-      - name: Collect libfaiss and its runtime dependencies into build/native-libs (robust)
-        shell: bash
-        run: |
-          set -euo pipefail
-          ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
-          mkdir -p "${ABI_DIR}"
+            - name: Find and copy AArch64 libomp.so (if available)
+              shell: bash
+              run: |
+                set -euo pipefail
+                ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
+                mkdir -p "$ABI_DIR"
 
-          # Map ANDROID_ABI to NDK triple for searching sysroot
+                # determine expected ELF token for target ABI
           case "${{ env.ANDROID_ABI }}" in
-            "arm64-v8a") TRIPLE="aarch64-linux-android"; MACHINE_TOKEN="AArch64" ;;
-            "armeabi-v7a") TRIPLE="arm-linux-androideabi"; MACHINE_TOKEN="ARM" ;;
-            "x86") TRIPLE="i686-linux-android"; MACHINE_TOKEN="Intel" ;;
-            "x86_64") TRIPLE="x86_64-linux-android"; MACHINE_TOKEN="x86-64" ;;
-            *) TRIPLE=""; MACHINE_TOKEN="" ;;
+            arm64-v8a) MACHINE_TOKEN="AArch64" ;;
+            armeabi-v7a) MACHINE_TOKEN="ARM" ;;
+            x86) MACHINE_TOKEN="Intel" ;;
+            x86_64) MACHINE_TOKEN="x86-64" ;;
+            *) MACHINE_TOKEN="" ;;
           esac
+          echo "Target ABI: ${{ env.ANDROID_ABI }} (expect ELF Machine token: $MACHINE_TOKEN)"
 
-          # Known search dirs (prioritized)
-          SEARCH_DIRS=(
-            "$HOME/faiss-install/lib"
-            "$HOME/faiss_openblas_work/build/faiss_${{ env.ANDROID_ABI }}"
-            "$HOME/opencv-install/sdk/native/jni/libs/${{ env.ANDROID_ABI }}"
-            "$PWD"   # build tree
-          )
-
-          # NDK sysroot location for the target triple (if present)
-          if [ -n "${NDK_ROOT:-}" ] && [ -d "$NDK_ROOT" ]; then
-            SYSROOT="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-            SEARCH_DIRS+=("$SYSROOT/usr/lib/$TRIPLE")
-            SEARCH_DIRS+=("$SYSROOT/usr/lib/$TRIPLE/$ANDROID_API_LEVEL" )
-            # also scan clang's lib location (where libomp may live)
-            SEARCH_DIRS+=("$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang" )
-            SEARCH_DIRS+=("$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/*/lib/*")
-          fi
-
-          # Libraries we consider "system" — skip bundling these
-          SKIP_LIBS=(libc.so libm.so libdl.so libgcc.so libgcc_s.so libstdc++.so)
-          
-          # Helper: check if candidate matches ABI by reading ELF header
+          # Helper: check ELF Machine
           matches_abi() {
             local file="$1"
-            # if no MACHINE_TOKEN known, be permissive
             [ -z "$MACHINE_TOKEN" ] && return 0
-            if readelf -h "$file" 2>/dev/null | grep -q "$MACHINE_TOKEN"; then
-              return 0
-            else
-              return 1
-            fi
+            readelf -h "$file" 2>/dev/null | awk -v token="$MACHINE_TOKEN" 'tolower($0) ~ tolower(token) {found=1} END{exit !found}'
           }
 
-          # Copy a file to ABI_DIR safely (skip if same file or already exists)
+          # Safe copy helper (avoid copying file onto itself)
           safe_copy() {
             local src="$1"
-            local dest_dir="$ABI_DIR"
-            local base="$(basename "$src")"
-            local dest="$dest_dir/$base"
-            # Resolve canonical paths
+            local dest="$ABI_DIR/$(basename "$src")"
             src_real=$(readlink -f "$src" 2>/dev/null || realpath -s "$src" 2>/dev/null || echo "$src")
             dest_real=$(readlink -f "$dest" 2>/dev/null || realpath -s "$dest" 2>/dev/null || echo "$dest")
             if [ -f "$dest" ]; then
               if [ "$src_real" = "$dest_real" ]; then
-                echo "skip: source and dest are the same file ($src_real)"
+                echo "skip: source and dest are same ($src_real)"
                 return 0
               else
-                echo "skip: $dest already exists (keeps first-copied version)"
+                echo "skip: dest already exists: $dest"
                 return 0
               fi
             fi
-            # Best-effort architecture check
-            if ! matches_abi "$src"; then
-              echo "WARN: skipping $src — does not match target ABI token '$MACHINE_TOKEN'"
-              return 1
-            fi
-            echo "Copying $src -> ${dest}"
-            cp -v "$src" "${dest}"
-            return 0
+            echo "copying $src -> $dest"
+            cp -v "$src" "$dest"
           }
 
-          # 1) Copy libfaiss* first from faiss-install or build outputs
-          echo "Looking for libfaiss*.so in prioritized locations..."
-          for d in "${SEARCH_DIRS[@]}"; do
+          # 1) Look specifically for libomp*.so under the NDK and clang lib dirs
+          found_any=0
+          if [ -n "${NDK_ROOT:-}" ] && [ -d "$NDK_ROOT" ]; then
+            echo "Searching NDK at $NDK_ROOT for libomp*.so..."
+            # search common clang lib linux dirs including wildcarded clang versions
+            find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null \
+              | while IFS= read -r -d '' lib; do
+                  echo "candidate: $lib"
+                  if matches_abi "$lib"; then
+                    safe_copy "$lib" && found_any=1
+                    # don't break — copy first matching one, but keep scanning (safe_copy will skip duplicates)
+                  else
+                    echo "  -> candidate does NOT match target ABI token ($MACHINE_TOKEN); skipping"
+                  fi
+                done
+          fi
+
+          # 2) Also try looking in faiss build & install dirs (where a cross-built runtime might be)
+          for d in "$HOME/faiss-install/lib" "$HOME/faiss_openblas_work/build/faiss_${{ env.ANDROID_ABI }}" "$HOME"; do
             if [ -d "$d" ]; then
-              find "$d" -maxdepth 3 -type f -name "libfaiss*.so" -print0 2>/dev/null \
-                | while IFS= read -r -d '' f; do safe_copy "$f"; done || true
+              find "$d" -type f -name "libomp*.so" -print0 2>/dev/null \
+                | while IFS= read -r -d '' lib; do
+                    echo "candidate: $lib"
+                    if matches_abi "$lib"; then
+                      safe_copy "$lib" && found_any=1
+                    else
+                      echo "  -> candidate does NOT match target ABI ($MACHINE_TOKEN); skipping"
+                    fi
+                done
             fi
           done
 
-          # 2) Inspect each copied libfaiss*.so for NEEDED entries and copy non-system deps
-          for faissfile in "${ABI_DIR}"/libfaiss*.so; do
-            [ -f "$faissfile" ] || continue
-            echo "Inspecting NEEDED entries for $faissfile"
-            readelf -d "$faissfile" 2>/dev/null | awk '/NEEDED/{gsub(/[\[\]]/,"",$5); print $5}' \
-              | while read -r dep; do
-                  # skip empty
-                  [ -z "$dep" ] && continue
-                  # skip system libs
-                  for s in "${SKIP_LIBS[@]}"; do
-                    [ "$dep" = "$s" ] && { echo "skip system lib $dep"; dep=""; break; }
-                  done
-                  [ -z "$dep" ] && continue
+          if [ "$found_any" -eq 0 ]; then
+            echo "No AArch64 libomp found in NDK/faiss/search dirs."
+            echo "Debug: listing all libomp candidates (with ELF Machine) under NDK root for inspection:"
+            if [ -n "${NDK_ROOT:-}" ]; then
+              find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null \
+                | while IFS= read -r -d '' lib; do
+                    printf "%s -> " "$lib"
+                    readelf -h "$lib" 2>/dev/null | awk '/Machine/ {print $2 " (" $0 ")"}'
+                done || true
+            fi
+            exit 0   # do not fail the job — we will handle missing lib at runtime or via rebuild
+          fi
 
-                  # If already present in ABI_DIR, continue
-                  if [ -f "${ABI_DIR}/${dep}" ]; then
-                    echo "already have ${dep}"
-                    continue
-                  fi
+          echo "Resulting collected libs in $ABI_DIR:"
+          ls -la "$ABI_DIR" 
+          || true
+          
+ 
 
-                  # Try prioritized search dirs (first match taken)
-                  found=""
-                  for d in "${SEARCH_DIRS[@]}"; do
-                    # find under d (restrict depth to avoid long scans)
-                    if [ -d "$d" ]; then
-                      found=$(find "$d" -type f -name "$dep" -print -quit 2>/dev/null || true)
-                      [ -n "$found" ] && break
-                    fi
-                  done
-
-                  # If not found yet, try NDK sysroot recursive search (restricted)
-                  if [ -z "$found" ] && [ -n "${SYSROOT:-}" ] && [ -d "$SYSROOT" ]; then
-                    found=$(find "$SYSROOT" -type f -name "$dep" -print -quit 2>/dev/null || true)
-                  fi
-
-                  if [ -n "$found" ]; then
-                    safe_copy "$found" || true
-                  else
-                    echo "WARNING: dependency $dep not found in prioritized search dirs (this may be okay if it's a system lib)"
-                  fi
-              done
-          done
-
-          echo "Final collected libs in ${ABI_DIR}:"
-          ls -la "${ABI_DIR}" || true
+                    
  
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
