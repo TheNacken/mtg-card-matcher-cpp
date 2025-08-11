@@ -420,15 +420,15 @@ jobs:
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
            -GNinja
           ninja
-          
-            - name: Find and copy AArch64 libomp.so (if available)
-              shell: bash
-              run: |
-                set -euo pipefail
-                ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
-                mkdir -p "$ABI_DIR"
 
-                # determine expected ELF token for target ABI
+      - name: Find and copy AArch64 libomp.so (if available)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
+          mkdir -p "$ABI_DIR"
+
+          # determine expected ELF token for target ABI
           case "${{ env.ANDROID_ABI }}" in
             arm64-v8a) MACHINE_TOKEN="AArch64" ;;
             armeabi-v7a) MACHINE_TOKEN="ARM" ;;
@@ -438,93 +438,5 @@ jobs:
           esac
           echo "Target ABI: ${{ env.ANDROID_ABI }} (expect ELF Machine token: $MACHINE_TOKEN)"
 
-          # Helper: check ELF Machine
-          matches_abi() {
-            local file="$1"
-            [ -z "$MACHINE_TOKEN" ] && return 0
-            readelf -h "$file" 2>/dev/null | awk -v token="$MACHINE_TOKEN" 'tolower($0) ~ tolower(token) {found=1} END{exit !found}'
-          }
-
-          # Safe copy helper (avoid copying file onto itself)
-          safe_copy() {
-            local src="$1"
-            local dest="$ABI_DIR/$(basename "$src")"
-            src_real=$(readlink -f "$src" 2>/dev/null || realpath -s "$src" 2>/dev/null || echo "$src")
-            dest_real=$(readlink -f "$dest" 2>/dev/null || realpath -s "$dest" 2>/dev/null || echo "$dest")
-            if [ -f "$dest" ]; then
-              if [ "$src_real" = "$dest_real" ]; then
-                echo "skip: source and dest are same ($src_real)"
-                return 0
-              else
-                echo "skip: dest already exists: $dest"
-                return 0
-              fi
-            fi
-            echo "copying $src -> $dest"
-            cp -v "$src" "$dest"
-          }
-
-          # 1) Look specifically for libomp*.so under the NDK and clang lib dirs
-          found_any=0
-          if [ -n "${NDK_ROOT:-}" ] && [ -d "$NDK_ROOT" ]; then
-            echo "Searching NDK at $NDK_ROOT for libomp*.so..."
-            # search common clang lib linux dirs including wildcarded clang versions
-            find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null \
-              | while IFS= read -r -d '' lib; do
-                  echo "candidate: $lib"
-                  if matches_abi "$lib"; then
-                    safe_copy "$lib" && found_any=1
-                    # don't break — copy first matching one, but keep scanning (safe_copy will skip duplicates)
-                  else
-                    echo "  -> candidate does NOT match target ABI token ($MACHINE_TOKEN); skipping"
-                  fi
-                done
-          fi
-
-          # 2) Also try looking in faiss build & install dirs (where a cross-built runtime might be)
-          for d in "$HOME/faiss-install/lib" "$HOME/faiss_openblas_work/build/faiss_${{ env.ANDROID_ABI }}" "$HOME"; do
-            if [ -d "$d" ]; then
-              find "$d" -type f -name "libomp*.so" -print0 2>/dev/null \
-                | while IFS= read -r -d '' lib; do
-                    echo "candidate: $lib"
-                    if matches_abi "$lib"; then
-                      safe_copy "$lib" && found_any=1
-                    else
-                      echo "  -> candidate does NOT match target ABI ($MACHINE_TOKEN); skipping"
-                    fi
-                done
-            fi
-          done
-
-          if [ "$found_any" -eq 0 ]; then
-            echo "No AArch64 libomp found in NDK/faiss/search dirs."
-            echo "Debug: listing all libomp candidates (with ELF Machine) under NDK root for inspection:"
-            if [ -n "${NDK_ROOT:-}" ]; then
-              find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null \
-                | while IFS= read -r -d '' lib; do
-                    printf "%s -> " "$lib"
-                    readelf -h "$lib" 2>/dev/null | awk '/Machine/ {print $2 " (" $0 ")"}'
-                done || true
-            fi
-            exit 0   # do not fail the job — we will handle missing lib at runtime or via rebuild
-          fi
-
-          echo "Resulting collected libs in $ABI_DIR:"
-          ls -la "$ABI_DIR" 
-          || true
-          
- 
-
-                    
- 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build-output
-          path: |
-            build/
-            build/native-libs/
-            
-
-
-
+          # Helper: check ELF Machine for a candidate file
+          matc
