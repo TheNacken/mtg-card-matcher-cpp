@@ -81,10 +81,10 @@ jobs:
           set -euo pipefail
           
           # Check if OpenCV is already cached
-          if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
-            echo "OpenCV found in cache, skipping build"
-            exit 0
-          fi
+          #if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
+          #  echo "OpenCV found in cache, skipping build"
+          #  exit 0
+          #fi
           
           echo "OpenCV not in cache, building..."
           git clone --depth 1 https://github.com/opencv/opencv.git
