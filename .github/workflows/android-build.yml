@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/opencv-install
-          key: opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-v2
+          key: opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-v3
           restore-keys: |
             opencv-intermediate-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-${{ env.CMAKE_BUILD_TYPE }}-
             opencv-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.ANDROID_API_LEVEL }}-
