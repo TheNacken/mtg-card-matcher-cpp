@@ -449,7 +449,91 @@ jobs:
           find $HOME -type f -name "libfaiss*.so" -exec cp -v {} "${ABI_DIR}/" \; || true
 
           echo "Collected shared libs into ${ABI_DIR}"
-          
+     
+      - name: Collect libfaiss and its runtime dependencies into build/native-libs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
+          mkdir -p "${ABI_DIR}"
+
+          # Candidate locations to search for .so files produced earlier
+          SEARCH_DIRS=(
+            "$HOME/faiss-install/lib"
+            "$HOME/opencv-install/sdk/native/jni/libs/${{ env.ANDROID_ABI }}"
+            "$HOME"
+            "${NDK_ROOT:-/opt/android-ndk}"
+            "."
+          )
+
+          # Helper to search and copy a given filename from search dirs
+          copy_found() {
+            local fname="$1"
+            for d in "${SEARCH_DIRS[@]}"; do
+              # find exact file
+              if [ -f "$d/$fname" ]; then
+                cp -v "$d/$fname" "$ABI_DIR/" && return 0
+              fi
+              # try recursive find under dir
+              found=$(find "$d" -type f -name "$fname" 2>/dev/null | head -n1 || true)
+              if [ -n "$found" ]; then
+                cp -v "$found" "$ABI_DIR/" && return 0
+              fi
+            done
+            return 1
+          }
+
+          # 1) Copy libfaiss files we built earlier
+          echo "Copying libfaiss*.so from $HOME/faiss-install/lib (if present)..."
+          if [ -d "$HOME/faiss-install/lib" ]; then
+            find "$HOME/faiss-install/lib" -maxdepth 1 -type f -name "libfaiss*.so" -print0 \
+              | while IFS= read -r -d '' f; do cp -v "$f" "${ABI_DIR}/"; done
+          fi
+
+          # Fallback: copy any libfaiss anywhere under $HOME
+          find "$HOME" -type f -name "libfaiss*.so" -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            cp -v "$f" "${ABI_DIR}/" || true
+          done || true
+
+          # 2) For each libfaiss*.so in ABI_DIR, inspect NEEDED tags and copy dependencies
+          for faissfile in "${ABI_DIR}"/libfaiss*.so; do
+            [ -f "$faissfile" ] || continue
+            echo "Inspecting NEEDED entries for $faissfile"
+            # readelf shows needed libs like: Shared library: [libomp.so]
+            NEEDS=$(readelf -d "$faissfile" 2>/dev/null | awk '/NEEDED/{print $5}' | tr -d '[]' || true)
+            for dep in $NEEDS; do
+              echo " - needs: $dep"
+              # If already present in ABI_DIR skip
+              if [ -f "${ABI_DIR}/${dep}" ]; then
+                echo "   -> already copied"
+                continue
+              fi
+              # Try to copy from known locations
+              if copy_found "$dep"; then
+                echo "   -> copied $dep"
+              else
+                # As a last resort, try global find (may be slow)
+                found=$(find / -type f -name "$dep" 2>/dev/null | head -n1 || true)
+                if [ -n "$found" ]; then
+                  cp -v "$found" "${ABI_DIR}/" || true
+                  echo "   -> copied from $found"
+                else
+                  echo "   -> WARNING: $dep not found in search dirs"
+                fi
+              fi
+            done
+          done
+
+          # 3) As extra safety, find libomp explicitly and copy
+          echo "Looking specifically for libomp*.so"
+          for d in "${SEARCH_DIRS[@]}"; do
+            find "$d" -type f -name "libomp*.so" -print0 2>/dev/null | while IFS= read -r -d '' f; do
+              cp -v "$f" "${ABI_DIR}/" || true
+            done
+          done
+
+          echo "Resulting collected libs:"
+          ls -la "${ABI_DIR}" || true
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -458,4 +542,5 @@ jobs:
             build/
             build/native-libs/
             
+
 
