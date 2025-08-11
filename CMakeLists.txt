@@ -14,8 +14,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenCV REQUIRED)
 
 # FAISS: prefer config package, fall back to manual search via FAISS_ROOT/FAISS_INCLUDE_DIR
+set(FAISS_PACKAGE_FOUND OFF)
 find_package(faiss CONFIG QUIET)
-if(NOT TARGET faiss)
+if(TARGET faiss)
+  set(FAISS_PACKAGE_FOUND ON)
+else()
   message(STATUS "faiss CMake package not found. Falling back to manual lookup using FAISS_ROOT/FAISS_INCLUDE_DIR.")
   # Allow user/environment to provide FAISS_ROOT
   if(DEFINED ENV{FAISS_ROOT} AND NOT FAISS_ROOT)
@@ -23,7 +26,7 @@ if(NOT TARGET faiss)
   endif()
   # Try common lib locations under FAISS_ROOT
   find_library(FAISS_LIB
-    NAMES faiss libfaiss faiss.so libfaiss.so
+    NAMES faiss libfaiss
     HINTS ${FAISS_ROOT} ${FAISS_ROOT}/lib ${FAISS_ROOT}/lib64
   )
   # Try includes under FAISS_ROOT or an explicit FAISS_INCLUDE_DIR
@@ -36,12 +39,6 @@ if(NOT TARGET faiss)
   if(NOT FAISS_LIB OR NOT FAISS_INCLUDE_DIR)
     message(FATAL_ERROR "FAISS not found. Provide faiss via package config (faiss_DIR) or set FAISS_ROOT and optionally FAISS_INCLUDE_DIR.")
   endif()
-  # Create imported target for consistency with package mode
-  add_library(faiss UNKNOWN IMPORTED)
-  set_target_properties(faiss PROPERTIES
-    IMPORTED_LOCATION "${FAISS_LIB}"
-    INTERFACE_INCLUDE_DIRECTORIES "${FAISS_INCLUDE_DIR}"
-  )
 endif()
 
 # nlohmann_json: try package first, fall back to header-only
@@ -80,41 +77,53 @@ if(NOT SQLite3_FOUND)
   endif()
 endif()
 
-# Include directories (only for non-target deps if needed; most are handled via targets)
-include_directories(${CMAKE_SOURCE_DIR})
+# Include directories
+include_directories(${OpenCV_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR})
+if(NOT FAISS_PACKAGE_FOUND)
+  include_directories(${FAISS_INCLUDE_DIR})
+endif()
 
 # Source files
 set(SOURCES
     matcher.cpp
 )
 
-
 # Library target (for Android NDK)
 add_library(matcher SHARED ${SOURCES})
-target_link_libraries(matcher PUBLIC
-  ${OpenCV_LIBS}
-  faiss
-  nlohmann_json::nlohmann_json
-  ${SQLITE_TARGET}
-)
+if(FAISS_PACKAGE_FOUND)
+  target_link_libraries(matcher
+      ${OpenCV_LIBS}
+      faiss
+      nlohmann_json::nlohmann_json
+      ${SQLITE_TARGET}
+  )
+else()
+  target_link_libraries(matcher
+      ${OpenCV_LIBS}
+      ${FAISS_LIB}
+      nlohmann_json::nlohmann_json
+      ${SQLITE_TARGET}
+  )
+endif()
 
 # Executable target
 add_executable(matcher_test main.cpp)
-target_link_libraries(matcher_test PRIVATE matcher)
-
-# Use dynamic linking for all platforms
-if(ANDROID)
-  # Use dynamic linking for Android
-  target_link_options(matcher_test PRIVATE 
-    -Wl,--gc-sections
-  )
-  # Remove the problematic _GNU_SOURCE redefinition
-  target_compile_definitions(matcher_test PRIVATE
-    # Don't redefine _GNU_SOURCE
+if(FAISS_PACKAGE_FOUND)
+  target_link_libraries(matcher_test
+      matcher
+      ${OpenCV_LIBS}
+      faiss
+      nlohmann_json::nlohmann_json
+      ${SQLITE_TARGET}
   )
 else()
-  # Use dynamic linking for non-Android
-  # Remove static link option
+  target_link_libraries(matcher_test
+      matcher
+      ${OpenCV_LIBS}
+      ${FAISS_LIB}
+      nlohmann_json::nlohmann_json
+      ${SQLITE_TARGET}
+  )
 endif()
 
 # Android NDK specific settings
@@ -123,26 +132,4 @@ if(ANDROID)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/android/libs/${ANDROID_ABI}"
     )
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    
-    # Set rpath for shared libraries
-    set_target_properties(matcher PROPERTIES
-        BUILD_WITH_INSTALL_RPATH TRUE
-        INSTALL_RPATH "$ORIGIN"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
-    
-    # Also set rpath for the executable
-    set_target_properties(matcher_test PROPERTIES
-        BUILD_WITH_INSTALL_RPATH TRUE
-        INSTALL_RPATH "$ORIGIN"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
 endif()
-
-# Ensure all relevant files are included in the build artifact
-install(TARGETS matcher matcher_test
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
-install(FILES matcher.h matcher.cpp main.cpp
-        DESTINATION src)

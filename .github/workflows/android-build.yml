@@ -44,7 +44,8 @@ jobs:
           echo "NDK_ROOT=$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
           echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
           echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
-
+          
+          # Check if SDK is already cached
           if [ -d "$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" ] && [ -d "$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}" ]; then
             echo "Android SDK found in cache, skipping download"
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
@@ -53,12 +54,14 @@ jobs:
             mkdir -p "$SDK_ROOT"
             cd "$SDK_ROOT"
             CLI_ZIP="commandlinetools-linux_latest.zip"
+            # official commandline tools (file name may be updated over time)
             wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
             unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
             mkdir -p "$SDK_ROOT/cmdline-tools/latest"
             mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
             rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+            # accept licenses (ignore the benign broken-pipe from 'yes')
             yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
             sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           fi
@@ -76,10 +79,14 @@ jobs:
       - name: Clone and build OpenCV
         run: |
           set -euo pipefail
+          
+          # Check if OpenCV is already cached
           if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
             echo "OpenCV found in cache, skipping build"
             exit 0
           fi
+          
+          echo "OpenCV not in cache, building..."
           git clone --depth 1 https://github.com/opencv/opencv.git
           git clone --depth 1 https://github.com/opencv/opencv_contrib.git
           cd opencv
@@ -87,7 +94,7 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTS=OFF \
             -DBUILD_PERF_TESTS=OFF \
             -DBUILD_EXAMPLES=OFF \
@@ -125,20 +132,47 @@ jobs:
       - name: Build SQLite3 for Android
         run: |
           set -euo pipefail
+          
+          # Check if SQLite3 is already cached
+          #if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
+          #  echo "SQLite3 found in cache, skipping build"
+          #  exit 0
+          #fi
+          
+          echo "SQLite3 not in cache, building..."
           cd /tmp
           wget -q https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
           unzip -q sqlite-amalgamation-3460000.zip
           cd sqlite-amalgamation-3460000
+          
+          # Create Android makefile
+          cat > Android.mk << 'EOF'
+          LOCAL_PATH := $(call my-dir)
+          include $(CLEAR_VARS)
+          LOCAL_MODULE := sqlite3
+          LOCAL_SRC_FILES := sqlite3.c
+          LOCAL_CFLAGS := -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE
+          include $(BUILD_STATIC_LIBRARY)
+          EOF
+          
+          # Use NDK to build
           mkdir -p $HOME/sqlite3-install/lib $HOME/sqlite3-install/include
+          
+          # Compile sqlite3.c directly with clang
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
             -c sqlite3.c \
             -o sqlite3.o \
             -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE \
             -O2 -fPIC
+          
+          # Create static library
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs libsqlite3.a sqlite3.o
+          
+          # Install
           cp libsqlite3.a $HOME/sqlite3-install/lib/
           cp sqlite3.h $HOME/sqlite3-install/include/
           cp sqlite3ext.h $HOME/sqlite3-install/include/
+          
           echo "SQLite3 built and installed to $HOME/sqlite3-install"
 
       - name: Cache SQLite3 immediately after build
@@ -150,9 +184,12 @@ jobs:
 
       - name: Prepare nlohmann/json for Android
         run: |
+          # Copy entire nlohmann directory to a location accessible during Android compilation
           mkdir -p $HOME/nlohmann-json-install/include
           cp -rv /usr/include/nlohmann $HOME/nlohmann-json-install/include/
           echo "Copied nlohmann directory to $HOME/nlohmann-json-install/include/"
+          echo "Contents of nlohmann-json-install:"
+          find $HOME/nlohmann-json-install/include/nlohmann -name "*.hpp" | head -10
 
       - name: Cache OpenBLAS and FAISS
         uses: actions/cache@v3
@@ -167,7 +204,7 @@ jobs:
             openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-${{ env.OPENBLAS_TAG }}-
             openblas-faiss-${{ runner.os }}-${{ env.ANDROID_ABI }}-
 
-      - name: Build OpenBLAS (shared libs enabled) and record paths
+      - name: Build OpenBLAS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
           NDK_ROOT: ${{ env.NDK_ROOT }}
@@ -180,14 +217,27 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           BUILD_DIR="$WORK_DIR/build"
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
+          
+          # Check if OpenBLAS is already cached
+          if [ -f "$build_subdir/lib/libopenblas.a" ]; then
+            echo "OpenBLAS found in cache, skipping build"
+            echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+            exit 0
+          fi
+          
+          echo "OpenBLAS not in cache, building..."
+          SCRIPT_DIR="$PWD"
           SRC_DIR="$WORK_DIR/src"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
+          # clone OpenBLAS (same branch/tag as script)
           if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
             git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
+          # build OpenBLAS for the ABI (cmake args are the same as in the original script)
           mkdir -p "$build_subdir"
           pushd "$build_subdir"
+          echo "Configuring OpenBLAS (ABI=${ANDROID_ABI})"
           "$CMAKE_BIN" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
@@ -202,27 +252,19 @@ jobs:
             -DANDROID_STL=c++_static \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
             -DBUILD_STATIC_LIBS=ON \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \
             -GNinja \
             "$SRC_DIR/OpenBLAS"
           ${NINJA_BIN}
           popd
-          # find produced libs (prefer .so then .a)
-          OPENBLAS_SO="$(find "$build_subdir" -type f -name "libopenblas*.so" -print -quit || true)"
-          OPENBLAS_A="$(find "$build_subdir" -type f -name "libopenblas*.a" -print -quit || true)"
-          mkdir -p "$WORK_DIR/installed"
-          if [ -n "$OPENBLAS_SO" ]; then
-            cp -v "$OPENBLAS_SO" "$WORK_DIR/installed/" || true
-            echo "$WORK_DIR/installed/$(basename "$OPENBLAS_SO")" > "$WORK_DIR/openblas_shared_path.txt"
-          fi
-          if [ -n "$OPENBLAS_A" ]; then
-            cp -v "$OPENBLAS_A" "$WORK_DIR/installed/" || true
-            echo "$WORK_DIR/installed/$(basename "$OPENBLAS_A")" > "$WORK_DIR/openblas_static_path.txt"
-          fi
-          echo "OpenBLAS build output listed:"
-          ls -la "$build_subdir" || true
+          echo "::group::OpenBLAS build output"
+          ls -la "$BUILD_DIR/openblas_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+          # expose the lib path for subsequent steps via a marker file
+          echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
+          echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
 
-      - name: Build FAISS (produce shared libs) and create minimal config
+      - name: Build FAISS (per script)
         env:
           SDK_ROOT: ${{ env.SDK_ROOT }}
           NDK_ROOT: ${{ env.NDK_ROOT }}
@@ -233,20 +275,33 @@ jobs:
         run: |
           set -euo pipefail
           WORK_DIR="$HOME/faiss_openblas_work"
+          
+          # Check if FAISS is already cached
+          if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
+            echo "FAISS found in cache, skipping build"
+            exit 0
+          fi
+          
+          echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
+          # clone faiss (same branch/tag as script)
           if [ ! -d "$SRC_DIR/faiss" ]; then
             git clone --recursive -b "$FAISS_TAG" https://github.com/facebookresearch/faiss.git faiss
           fi
-          OPENBLAS_SHARED="$(cat $WORK_DIR/openblas_shared_path.txt 2>/dev/null || true)"
-          OPENBLAS_STATIC="$(cat $WORK_DIR/openblas_static_path.txt 2>/dev/null || true)"
-          # Prefer shared OpenBLAS if present
-          MKL_LIBS_ARG="${OPENBLAS_SHARED:-${OPENBLAS_STATIC}}"
+          # read openblas lib path written by previous step
+          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
+          if [ -z "$OPENBLAS_LIB_PATH" ]; then
+            echo "ERROR: openblas lib path not found (expected $WORK_DIR/openblas_lib_path.txt)"
+            exit 1
+          fi
+          # configure and build FAISS with the same cmake args as the script (note: we pass MKL_LIBRARIES as in the script)
           abi_build_dir="$BUILD_DIR/faiss_${ANDROID_ABI}"
           mkdir -p "$abi_build_dir"
           pushd "$abi_build_dir"
+          echo "Configuring FAISS (ABI=${ANDROID_ABI})"
           "$CMAKE_BIN" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
@@ -264,66 +319,91 @@ jobs:
             -DBUILD_TESTING=OFF \
             -DBUILD_SHARED_LIBS=ON \
             -DBLA_VENDOR=OpenBLAS \
-            -DMKL_LIBRARIES="$MKL_LIBS_ARG" \
+            -DMKL_LIBRARIES=${OPENBLAS_LIB_PATH} \
             -DCMAKE_CXX_FLAGS_RELEASE="-s" \
             -GNinja \
             "$SRC_DIR/faiss"
           ${NINJA_BIN}
           popd
+          echo "::group::FAISS build output"
+          ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
+          echo "::endgroup::"
+          # install into a faiss-install dir similar to script expectations
           mkdir -p $HOME/faiss-install/lib $HOME/faiss-install/include
-          # Copy produced faiss libs (shared preferred)
-          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*.so" -exec cp -v {} $HOME/faiss-install/lib/ \; || true
-          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*.a" -exec cp -v {} $HOME/faiss-install/lib/ \; || true
-          # Also copy any openblas .so produced earlier (if present)
-          if [ -f "$WORK_DIR/installed/"*openblas*.so ]; then
-            cp -v "$WORK_DIR/installed/"*openblas*.so $HOME/faiss-install/lib/ || true
-          fi
-          # Copy headers
-          cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/ || true
-          # Create minimal faissConfig.cmake (point to the .so if exists)
+          # Copy library files to the lib directory
+          echo "Copying FAISS library files..."
+          find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -print0 | while IFS= read -r -d '' file; do
+            cp -v "$file" $HOME/faiss-install/lib/
+          done
+          # Copy header files from source
+          echo "Copying FAISS header files..."
+          cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/
+          # Create a minimal CMake config for FAISS discovery
           mkdir -p $HOME/faiss-install/lib/cmake/faiss
-          FAFILE="$(ls -1 $HOME/faiss-install/lib/libfaiss*.so 2>/dev/null | head -n1 || true)"
-          if [ -n "$FAFILE" ]; then
-            cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
-            add_library(faiss SHARED IMPORTED)
-            set_target_properties(faiss PROPERTIES
-              IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../$(notdir ${FAFILE})"
-              INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
-              INTERFACE_LINK_LIBRARIES "libopenblas.so"
-            )
-            EOF
-          else
-            # fallback minimal config referencing static lib name if only .a exists
-            cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
-            add_library(faiss UNKNOWN IMPORTED)
-            set_target_properties(faiss PROPERTIES
-              INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
-            )
-            EOF
-          fi
+          cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
+          # Minimal FAISS config
+          add_library(faiss SHARED IMPORTED)
+          set_target_properties(faiss PROPERTIES
+            IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/../../libfaiss.so"
+            INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
+          )
+          EOF
           echo "FAISS artifacts copied to $HOME/faiss-install"
+          
+          # Debug: List what was actually installed
+          echo "::group::FAISS installation verification"
+          echo "Contents of $HOME/faiss-install:"
+          find $HOME/faiss-install -type f 2>/dev/null | head -20 || true
+          echo "Contents of $HOME/faiss-install/lib:"
+          ls -la $HOME/faiss-install/lib/ 2>/dev/null || echo "lib directory not found"
+          echo "Contents of $HOME/faiss-install/include:"
+          ls -la $HOME/faiss-install/include/ 2>/dev/null || echo "include directory not found"
+          echo "Checking for required FAISS library file:"
+          if [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
+            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.so"
+          else
+            echo "✗ FAISS library NOT found at expected location"
+            echo "Searching for libfaiss files:"
+            find $HOME/faiss-install -name "libfaiss*" -type f 2>/dev/null || true
+          fi
+          echo "::endgroup::"
 
       - name: Verify OpenBLAS library exists
         run: |
           WORK_DIR="$HOME/faiss_openblas_work"
-          OPENBLAS_SO="$(cat $WORK_DIR/openblas_shared_path.txt 2>/dev/null || true)"
-          OPENBLAS_A="$(cat $WORK_DIR/openblas_static_path.txt 2>/dev/null || true)"
-          if [ -z "$OPENBLAS_SO" ] && [ -z "$OPENBLAS_A" ]; then
-            echo "::error::Required OpenBLAS library not found in installed area"
+          
+          # Try to get the path from the marker file first
+          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt 2>/dev/null || true)"
+          
+          # If not found in marker file, try to find it in the expected location
+          if [ -z "$OPENBLAS_LIB_PATH" ]; then
+            OPENBLAS_LIB_PATH="$WORK_DIR/build/openblas_${ANDROID_ABI}/lib/libopenblas.a"
+            echo "$OPENBLAS_LIB_PATH" > "$WORK_DIR/openblas_lib_path.txt"
+          fi
+          
+          if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
+            echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
+            echo "Searching for OpenBLAS libraries..."
             find "$WORK_DIR" -name "libopenblas*" -type f 2>/dev/null || true
+            ls -al "$(dirname "$OPENBLAS_LIB_PATH")" 2>/dev/null || true
             exit 1
           fi
-          echo "OpenBLAS shared: $OPENBLAS_SO"
-          echo "OpenBLAS static: $OPENBLAS_A"
+          echo "Found OpenBLAS: $OPENBLAS_LIB_PATH"
 
       - name: Configure and build project (final)
         run: |
           echo "::group::Pre-build verification"
-          ls -la $HOME/faiss-install/ || true
-          ls -la $HOME/faiss-install/lib/ || true
-          ls -la $HOME/sqlite3-install/ || true
-          ls -la $HOME/nlohmann-json-install/include/nlohmann/ || true
+          echo "FAISS installation check:"
+          ls -la $HOME/faiss-install/ || echo "faiss-install not found"
+          ls -la $HOME/faiss-install/lib/ || echo "faiss-install/lib not found"
+          ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
+          echo "SQLite3 installation check:"
+          ls -la $HOME/sqlite3-install/ || echo "sqlite3-install not found"
+          ls -la $HOME/sqlite3-install/lib/ || echo "sqlite3-install/lib not found"
+          echo "nlohmann_json header check:"
+          ls -la $HOME/nlohmann-json-install/include/nlohmann/ || echo "nlohmann-json-install not found"
           echo "::endgroup::"
+          
           mkdir -p build && cd build
           cmake .. \
            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
@@ -341,99 +421,10 @@ jobs:
            -GNinja
           ninja
 
-      - name: Package shared libraries with executable (improved)
-        run: |
-          set -euo pipefail
-          WORK_DIR="$HOME/faiss_openblas_work"
-          PKG_DIR=build/packaged_app
-          mkdir -p "$PKG_DIR"
-          cd build
-          # copy the built executable and library
-          cp -v matcher_test "$PKG_DIR/" || echo "matcher_test not found"
-          cp -v libmatcher.so "$PKG_DIR/" || echo "libmatcher.so not found"
-          # Copy all OpenCV .so for ABI (conservative)
-          if [ -d "$HOME/opencv-install/sdk/native/libs/${ANDROID_ABI}" ]; then
-            cp -v "$HOME/opencv-install/sdk/native/libs/${ANDROID_ABI}"/*.so "$PKG_DIR/" || true
-          fi
-          # Copy faiss and openblas .so files
-          if [ -d "$HOME/faiss-install/lib" ]; then
-            cp -v "$HOME/faiss-install/lib/"*.so "$PKG_DIR/" 2>/dev/null || true
-          fi
-          # Copy sqlite .so if exists (won't if statically linked)
-          if [ -d "$HOME/sqlite3-install/lib" ]; then
-            cp -v "$HOME/sqlite3-install/lib/"*.so "$PKG_DIR/" 2>/dev/null || true
-          fi
-
-          # Determine DT_NEEDED for matcher_test and libmatcher.so using NDK readelf and copy matching libs from known locations
-          READELF="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-readelf"
-          NEEDS_LIST="$(for f in "$PKG_DIR/matcher_test" "$PKG_DIR/libmatcher.so"; do
-            if [ -f "$f" ]; then
-              $READELF -d "$f" 2>/dev/null | awk -F'[][]' '/NEEDED/{print $2}'
-            fi
-          done | sort -u)"
-          echo "Needed shared libs found in binaries:"
-          echo "$NEEDS_LIST"
-          # Search and copy each needed .so from typical locations (faiss-install, opencv-install, work build, home)
-          for libname in $NEEDS_LIST; do
-            # skip if already present
-            if [ -f "$PKG_DIR/$libname" ]; then
-              echo "$libname already present"
-              continue
-            fi
-            # try to locate
-            found="$(find "$HOME/faiss-install" "$HOME/opencv-install" "$WORK_DIR" "$HOME/sqlite3-install" -type f -name "$libname" 2>/dev/null | head -n1 || true)"
-            if [ -n "$found" ]; then
-              echo "Copying $found -> $PKG_DIR"
-              cp -v "$found" "$PKG_DIR/"
-            else
-              echo "::warning::Could not locate $libname in known install/build trees"
-            fi
-          done
-
-          # As an extra safety net, copy any .so under faiss-install/opencv-install/openblas build
-          for d in "$HOME/faiss-install/lib" "$HOME/opencv-install/sdk/native/libs/${ANDROID_ABI}" "$WORK_DIR/installed" "$WORK_DIR/build/openblas_${ANDROID_ABI}/lib"; do
-            if [ -d "$d" ]; then
-              cp -vn "$d"/*.so "$PKG_DIR/" 2>/dev/null || true
-            fi
-          done
-
-          # Create a run wrapper that sets LD_LIBRARY_PATH to this folder and runs
-          cat > "$PKG_DIR/run.sh" <<'EOF'
-          #!/bin/sh
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          export LD_LIBRARY_PATH="$DIR:$LD_LIBRARY_PATH"
-          exec "$DIR/matcher_test" "$@"
-          EOF
-          chmod +x "$PKG_DIR/run.sh"
-
-          echo "::group::Packaged files"
-          ls -la "$PKG_DIR"
-          echo "::endgroup::"
-
-      - name: Find and list all shared libraries
-        run: |
-          echo "::group::Finding shared libraries"
-          find build -name "*.so" -type f | sort
-          echo "::endgroup::"
-          echo "::group::OpenCV libraries"
-          find $HOME/opencv-install -name "*.so" -type f 2>/dev/null | sort || echo "No OpenCV .so files found"
-          echo "::endgroup::"
-          echo "::group::Other dependency locations"
-          find $HOME/faiss-install -type f 2>/dev/null | head -40 || true
-          find $HOME/sqlite3-install -type f 2>/dev/null | head -20 || true
-          echo "::endgroup::"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-build-output
-          path: |
-            build/
-            build/**/*.so
-            build/packaged_app/**
-            ${{ env.HOME }}/opencv-install/sdk/native/libs/${{ env.ANDROID_ABI }}/*.so
-            ${{ env.HOME }}/faiss-install/lib/*.so
-            matcher.cpp
-            matcher.h
-            main.cpp
-            *.so
+          path: build/
+
