@@ -421,6 +421,7 @@ jobs:
            -DSQLite3_INCLUDE_DIR=$HOME/sqlite3-install/include \
            -DSQLite3_LIBRARY=$HOME/sqlite3-install/lib/libsqlite3.a \
            -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
+           -DANDROID_STL=c++_shared \
            -GNinja
           ninja
 
