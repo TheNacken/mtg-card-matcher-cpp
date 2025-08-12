@@ -13,8 +13,18 @@ int main(int argc, char** argv) {
     std::string imagePath = argv[3];
 
     try {
+        auto t_start = std::chrono::high_resolution_clock::now();
+        auto t_init_start = t_start;
         mtg::init(indexPath, sqlitePath);
+        auto t_init_end = std::chrono::high_resolution_clock::now();
+        auto init_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_init_end - t_init_start).count();
+
+        auto t_match_start = t_init_end;
         std::string card_id = mtg::match(imagePath);
+        auto t_match_end = std::chrono::high_resolution_clock::now();
+        auto match_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count();
+
+        auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_start).count();
 
         if (!card_id.empty()) {
             nlohmann::json meta = mtg::get_metadata(card_id);  // Access metadata via function
@@ -35,6 +45,9 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "No match found" << std::endl;
         }
+        std::cout << "Initialization time: " << init_time << " ms" << std::endl;
+        std::cout << "Matching time: " << match_time << " ms" << std::endl;
+        std::cout << "Total processing time: " << total_time << " ms" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
