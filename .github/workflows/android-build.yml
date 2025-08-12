@@ -558,6 +558,82 @@ jobs:
 
           ls -la "$ABI_DIR" || true
 
+      - name: Package FAISS for Android Studio (jniLibs + headers)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$HOME/android-artifacts"
+          ABI="$ANDROID_ABI"
+          ABI_JNI_DIR="$ARTIFACT_DIR/jniLibs/$ABI"
+          mkdir -p "$ABI_JNI_DIR"
+          mkdir -p "$ARTIFACT_DIR/include"
+          mkdir -p "$ARTIFACT_DIR/cmake"
+
+          echo "Packaging FAISS shared libs into: $ABI_JNI_DIR"
+          # Prefer libfaiss*.so found in faiss-install/lib, fall back to build dir
+          found_lib=0
+          for candidate in $(find "$HOME/faiss-install/lib" -maxdepth 1 -type f -name "libfaiss*.so" 2>/dev/null) ; do
+            echo "Found libfaiss candidate: $candidate"
+            cp -v "$candidate" "$ABI_JNI_DIR/libfaiss.so"
+            found_lib=1
+            break
+          done
+          if [ "$found_lib" -eq 0 ]; then
+            echo "No libfaiss in $HOME/faiss-install/lib; searching faiss build output..."
+            for candidate in $(find "$HOME/faiss_openblas_work/build/faiss_${ABI}" -type f -name "libfaiss*.so" 2>/dev/null) ; do
+              echo "Found libfaiss build candidate: $candidate"
+              cp -v "$candidate" "$ABI_JNI_DIR/libfaiss.so"
+              found_lib=1
+              break
+            done
+          fi
+
+          if [ "$found_lib" -eq 0 ]; then
+            echo "::warning::libfaiss.so not found — the artifact will not contain the FAISS shared library."
+          else
+            echo "libfaiss.so packaged at $ABI_JNI_DIR/libfaiss.so"
+          fi
+
+          # Copy any collected runtime libs (libc++_shared.so, libomp*.so) from build/native-libs/<ABI>
+          if [ -d "build/native-libs/$ABI" ]; then
+            echo "Copying additional runtime libs from build/native-libs/$ABI -> $ABI_JNI_DIR"
+            cp -v build/native-libs/$ABI/* "$ABI_JNI_DIR/" || true
+          fi
+
+          # If the packaging didn't find libc++_shared or libomp in build/native-libs, try faiss-install/lib
+          if [ -d "$HOME/faiss-install/lib" ]; then
+            echo "Also scanning $HOME/faiss-install/lib for runtime libs to include..."
+            for l in "$HOME/faiss-install/lib"/libc++_shared.so "$HOME/faiss-install/lib"/libomp*.so; do
+              if [ -f "$l" ]; then
+                cp -v "$l" "$ABI_JNI_DIR/" || true
+              fi
+            done
+          fi
+
+          # Copy header files (FAISS headers)
+          if [ -d "$HOME/faiss-install/include" ]; then
+            echo "Copying FAISS headers to $ARTIFACT_DIR/include/"
+            cp -rv "$HOME/faiss-install/include/"* "$ARTIFACT_DIR/include/" || true
+          else
+            echo "::warning::FAISS include directory not found at $HOME/faiss-install/include"
+          fi
+
+          # Optional: create a tiny README and a minimal cmake snippet to help consumers
+          cat > "$ARTIFACT_DIR/README_FAISS_ANDROID.md" <<'EOF'
+          This package contains:
+            - jniLibs/<ABI>/libfaiss.so  (FAISS shared library for the target ABI)
+            - jniLibs/<ABI>/*.so         (possible runtime libs such as libc++_shared.so, libomp*.so)
+            - include/                   (FAISS header tree, suitable for CMake include directories)
+
+          To consume in Android Studio:
+            1) Copy the jniLibs directory under app/src/main/jniLibs/
+            2) Copy include/ to a safe location and use target_include_directories or include_directories() in your CMakeLists.txt
+            3) Link against libfaiss in CMake via find_library() or by adding an IMPORTED library with the correct path.
+          EOF
+
+          echo "Packaged files:"
+          find "$ARTIFACT_DIR" -maxdepth 3 -type f -print || true
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -565,3 +641,6 @@ jobs:
           path: |
             build/
             build/native-libs/
+            $HOME/faiss-install/lib/
+            $HOME/faiss-install/include/
+            $HOME/android-artifacts/
