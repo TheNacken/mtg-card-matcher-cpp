@@ -11,8 +11,6 @@
 #include <stdexcept>
 #include <map>
 #include <vector>
-#include <chrono>
-#include <cstdio>
 
 namespace mtg {
 
@@ -91,36 +89,37 @@ void init(const std::string& indexPath, const std::string& sqlitePath) {
 
 std::string match(const std::string& imagePath) {
     auto t_start = std::chrono::high_resolution_clock::now();
-    fprintf(stderr, "[DEBUG] Loading image: %s\n", imagePath.c_str()); fflush(stderr);
+    std::cout << "[DEBUG] Loading image: " << imagePath << std::endl;
     cv::Mat image = cv::imread(imagePath);
     if (image.empty()) {
-        fprintf(stderr, "[DEBUG] Failed to load image.\n"); fflush(stderr);
+        std::cout << "[DEBUG] Failed to load image." << std::endl;
         return "";
     }
 
     auto t_preprocess_start = std::chrono::high_resolution_clock::now();
-    fprintf(stderr, "[DEBUG] Preprocessing image...\n"); fflush(stderr);
+    std::cout << "[DEBUG] Preprocessing image..." << std::endl;
     cv::Mat gray;
     cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
     cv::resize(gray, gray, cv::Size(512, 512));
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
     clahe->apply(gray, gray);
     auto t_preprocess_end = std::chrono::high_resolution_clock::now();
-    long long preprocess_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_preprocess_end - t_preprocess_start).count();
-    fprintf(stderr, "[DEBUG] Preprocessing done. Time: %lld ms\n", (long long)preprocess_ms); fflush(stderr);
+    std::cout << "[DEBUG] Preprocessing done. Time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t_preprocess_end - t_preprocess_start).count()
+              << " ms" << std::endl;
 
     auto t_orb_start = std::chrono::high_resolution_clock::now();
-    fprintf(stderr, "[DEBUG] Extracting ORB features...\n"); fflush(stderr);
+    std::cout << "[DEBUG] Extracting ORB features..." << std::endl;
     cv::Ptr<cv::ORB> orb = cv::ORB::create(500);
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat query_descriptors;
     orb->detectAndCompute(gray, cv::noArray(), keypoints, query_descriptors);
     auto t_orb_end = std::chrono::high_resolution_clock::now();
-    long long orb_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_orb_end - t_orb_start).count();
-    fprintf(stderr, "[DEBUG] ORB extraction done. Keypoints: %zu, Time: %lld ms\n", keypoints.size(), orb_ms); fflush(stderr);
-
+    std::cout << "[DEBUG] ORB extraction done. Keypoints: " << keypoints.size()
+              << ", Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t_orb_end - t_orb_start).count()
+              << " ms" << std::endl;
     if (query_descriptors.empty()) {
-        fprintf(stderr, "[DEBUG] No descriptors found.\n"); fflush(stderr);
+        std::cout << "[DEBUG] No descriptors found." << std::endl;
         return "";
     }
 
@@ -128,16 +127,17 @@ std::string match(const std::string& imagePath) {
     int n_queries = query_descriptors.rows;
 
     auto t_faiss_start = std::chrono::high_resolution_clock::now();
-    fprintf(stderr, "[DEBUG] Performing Faiss search...\n"); fflush(stderr);
+    std::cout << "[DEBUG] Performing Faiss search..." << std::endl;
     std::vector<int32_t> distances(n_queries * 2);
     std::vector<int64_t> indices(n_queries * 2);
     index->search(n_queries, query_descriptors.data, 2, distances.data(), indices.data());
     auto t_faiss_end = std::chrono::high_resolution_clock::now();
-    long long faiss_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_faiss_end - t_faiss_start).count();
-    fprintf(stderr, "[DEBUG] Faiss search done. Time: %lld ms\n", faiss_ms); fflush(stderr);
+    std::cout << "[DEBUG] Faiss search done. Time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t_faiss_end - t_faiss_start).count()
+              << " ms" << std::endl;
 
     auto t_match_start = std::chrono::high_resolution_clock::now();
-    fprintf(stderr, "[DEBUG] Applying Lowe's ratio test...\n"); fflush(stderr);
+    std::cout << "[DEBUG] Applying Lowe's ratio test..." << std::endl;
     std::vector<std::pair<int64_t, int32_t>> good_matches;
     const float ratio_thresh = 0.8f;
     for (int i = 0; i < n_queries; ++i) {
@@ -147,13 +147,13 @@ std::string match(const std::string& imagePath) {
             good_matches.emplace_back(indices[i * 2], d1);
         }
     }
-    fprintf(stderr, "[DEBUG] Good matches found: %zu\n", good_matches.size()); fflush(stderr);
+    std::cout << "[DEBUG] Good matches found: " << good_matches.size() << std::endl;
     if (good_matches.size() < 5) { // Minimum matches threshold
-        fprintf(stderr, "[DEBUG] Not enough good matches.\n"); fflush(stderr);
+        std::cout << "[DEBUG] Not enough good matches." << std::endl;
         return "";
     }
 
-    fprintf(stderr, "[DEBUG] Counting matches per card...\n"); fflush(stderr);
+    std::cout << "[DEBUG] Counting matches per card..." << std::endl;
     std::map<std::string, std::pair<int, float>> card_scores; // (count, avg_distance)
     for (const auto& [idx, dist] : good_matches) {
         for (const auto& [card_id, range] : offsets) {
@@ -178,12 +178,14 @@ std::string match(const std::string& imagePath) {
         }
     }
     auto t_match_end = std::chrono::high_resolution_clock::now();
-    long long match_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count();
-    fprintf(stderr, "[DEBUG] Card matching done. Time: %lld ms\n", match_ms); fflush(stderr);
+    std::cout << "[DEBUG] Card matching done. Time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count()
+              << " ms" << std::endl;
 
     auto t_end = std::chrono::high_resolution_clock::now();
-    long long total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-    fprintf(stderr, "[DEBUG] Total match() time: %lld ms\n", total_ms); fflush(stderr);
+    std::cout << "[DEBUG] Total match() time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count()
+              << " ms" << std::endl;
 
     return best_card_id.empty() ? "" : best_card_id;
 }
@@ -196,4 +198,4 @@ nlohmann::json get_metadata(const std::string& card_id) {
     return nlohmann::json{}; // Return empty JSON if not found
 }
 
-} // namespace mtg
+}
