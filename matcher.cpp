@@ -1,5 +1,6 @@
 
 #include "matcher.h"
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
@@ -12,6 +13,13 @@
 #include <stdexcept>
 #include <map>
 #include <vector>
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGD(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "mtg-matcher", fmt, ##__VA_ARGS__)
+#else
+#define LOGD(fmt, ...) std::cout << fmt << std::endl
+#endif
 
 namespace mtg {
 
@@ -90,37 +98,33 @@ void init(const std::string& indexPath, const std::string& sqlitePath) {
 
 std::string match(const std::string& imagePath) {
     auto t_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Loading image: " << imagePath << std::endl;
+    LOGD("[DEBUG] Loading image: %s", imagePath.c_str());
     cv::Mat image = cv::imread(imagePath);
     if (image.empty()) {
-        std::cout << "[DEBUG] Failed to load image." << std::endl;
+        LOGD("[DEBUG] Failed to load image.");
         return "";
     }
 
     auto t_preprocess_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Preprocessing image..." << std::endl;
+    LOGD("[DEBUG] Preprocessing image...");
     cv::Mat gray;
     cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
     cv::resize(gray, gray, cv::Size(512, 512));
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
     clahe->apply(gray, gray);
     auto t_preprocess_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Preprocessing done. Time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t_preprocess_end - t_preprocess_start).count()
-              << " ms" << std::endl;
+    LOGD("[DEBUG] Preprocessing done. Time: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_preprocess_end - t_preprocess_start).count());
 
     auto t_orb_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Extracting ORB features..." << std::endl;
+    LOGD("[DEBUG] Extracting ORB features...");
     cv::Ptr<cv::ORB> orb = cv::ORB::create(500);
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat query_descriptors;
     orb->detectAndCompute(gray, cv::noArray(), keypoints, query_descriptors);
     auto t_orb_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] ORB extraction done. Keypoints: " << keypoints.size()
-              << ", Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t_orb_end - t_orb_start).count()
-              << " ms" << std::endl;
+    LOGD("[DEBUG] ORB extraction done. Keypoints: %zu, Time: %lld ms", keypoints.size(), (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_orb_end - t_orb_start).count());
     if (query_descriptors.empty()) {
-        std::cout << "[DEBUG] No descriptors found." << std::endl;
+        LOGD("[DEBUG] No descriptors found.");
         return "";
     }
 
@@ -128,17 +132,15 @@ std::string match(const std::string& imagePath) {
     int n_queries = query_descriptors.rows;
 
     auto t_faiss_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Performing Faiss search..." << std::endl;
+    LOGD("[DEBUG] Performing Faiss search...");
     std::vector<int32_t> distances(n_queries * 2);
     std::vector<int64_t> indices(n_queries * 2);
     index->search(n_queries, query_descriptors.data, 2, distances.data(), indices.data());
     auto t_faiss_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Faiss search done. Time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t_faiss_end - t_faiss_start).count()
-              << " ms" << std::endl;
+    LOGD("[DEBUG] Faiss search done. Time: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_faiss_end - t_faiss_start).count());
 
     auto t_match_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Applying Lowe's ratio test..." << std::endl;
+    LOGD("[DEBUG] Applying Lowe's ratio test...");
     std::vector<std::pair<int64_t, int32_t>> good_matches;
     const float ratio_thresh = 0.8f;
     for (int i = 0; i < n_queries; ++i) {
@@ -148,13 +150,13 @@ std::string match(const std::string& imagePath) {
             good_matches.emplace_back(indices[i * 2], d1);
         }
     }
-    std::cout << "[DEBUG] Good matches found: " << good_matches.size() << std::endl;
+    LOGD("[DEBUG] Good matches found: %zu", good_matches.size());
     if (good_matches.size() < 5) { // Minimum matches threshold
-        std::cout << "[DEBUG] Not enough good matches." << std::endl;
+        LOGD("[DEBUG] Not enough good matches.");
         return "";
     }
 
-    std::cout << "[DEBUG] Counting matches per card..." << std::endl;
+    LOGD("[DEBUG] Counting matches per card...");
     std::map<std::string, std::pair<int, float>> card_scores; // (count, avg_distance)
     for (const auto& [idx, dist] : good_matches) {
         for (const auto& [card_id, range] : offsets) {
@@ -179,14 +181,10 @@ std::string match(const std::string& imagePath) {
         }
     }
     auto t_match_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Card matching done. Time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count()
-              << " ms" << std::endl;
+    LOGD("[DEBUG] Card matching done. Time: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count());
 
     auto t_end = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Total match() time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count()
-              << " ms" << std::endl;
+    LOGD("[DEBUG] Total match() time: %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count());
 
     return best_card_id.empty() ? "" : best_card_id;
 }
