@@ -87,12 +87,12 @@ void init(const std::string& indexPath, const std::string& sqlitePath) {
     sqlite3_close(db);
 }
 
-std::string match(const std::string& imagePath) {
+std::string match(const std::vector<unsigned char>& imageData) {
     auto t_start = std::chrono::high_resolution_clock::now();
-    std::cout << "[DEBUG] Loading image: " << imagePath << std::endl;
-    cv::Mat image = cv::imread(imagePath);
+    std::cout << "[DEBUG] Decoding image from memory..." << std::endl;
+    cv::Mat image = cv::imdecode(imageData, cv::IMREAD_COLOR);
     if (image.empty()) {
-        std::cout << "[DEBUG] Failed to load image." << std::endl;
+        std::cout << "[DEBUG] Failed to decode image." << std::endl;
         return "";
     }
 

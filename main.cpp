@@ -1,6 +1,8 @@
 #include "matcher.h"
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <fstream>
+#include <iterator>
 
 int main(int argc, char** argv) {
     if (argc != 4) {
@@ -19,8 +21,15 @@ int main(int argc, char** argv) {
         auto t_init_end = std::chrono::high_resolution_clock::now();
         auto init_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_init_end - t_init_start).count();
 
+        // Load image file into memory buffer
+        std::ifstream file(imagePath, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Failed to open image file: " + imagePath);
+        }
+        std::vector<unsigned char> imageData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
         auto t_match_start = t_init_end;
-        std::string card_id = mtg::match(imagePath);
+        std::string card_id = mtg::match(imageData);
         auto t_match_end = std::chrono::high_resolution_clock::now();
         auto match_time = std::chrono::duration_cast<std::chrono::milliseconds>(t_match_end - t_match_start).count();
 
