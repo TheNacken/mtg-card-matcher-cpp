@@ -76,10 +76,10 @@ jobs:
       - name: Clone and build OpenCV
         run: |
           set -euo pipefail
-          #if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
-          #  echo "OpenCV found in cache, skipping build"
-          #  exit 0
-          #fi
+          if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
+            echo "OpenCV found in cache, skipping build"
+            exit 0
+          fi
           git clone --depth 1 https://github.com/opencv/opencv.git
           git clone --depth 1 https://github.com/opencv/opencv_contrib.git
           cd opencv
@@ -87,7 +87,7 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
             -DCMAKE_INSTALL_PREFIX=$HOME/opencv-install \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_TESTS=OFF \
             -DBUILD_PERF_TESTS=OFF \
             -DBUILD_EXAMPLES=OFF \
@@ -125,7 +125,7 @@ jobs:
       - name: Build SQLite3 for Android
         run: |
           set -euo pipefail
-          if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
+          if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.so" ]; then
             echo "SQLite3 found in cache, skipping build"
             exit 0
           fi
@@ -139,16 +139,17 @@ jobs:
           LOCAL_MODULE := sqlite3
           LOCAL_SRC_FILES := sqlite3.c
           LOCAL_CFLAGS := -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE
-          include $(BUILD_STATIC_LIBRARY)
+          include $(BUILD_SHARED_LIBRARY)
           EOF
           mkdir -p $HOME/sqlite3-install/lib $HOME/sqlite3-install/include
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
-            -c sqlite3.c \
-            -o sqlite3.o \
+            -shared \
+            -fPIC \
+            -o libsqlite3.so \
+            sqlite3.c \
             -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE \
-            -O2 -fPIC
-          $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs libsqlite3.a sqlite3.o
-          cp libsqlite3.a $HOME/sqlite3-install/lib/
+            -O2
+          cp libsqlite3.so $HOME/sqlite3-install/lib/
           cp sqlite3.h $HOME/sqlite3-install/include/
           cp sqlite3ext.h $HOME/sqlite3-install/include/
           echo "SQLite3 built and installed to $HOME/sqlite3-install"
