@@ -45,7 +45,6 @@ jobs:
           echo "CMAKE_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/cmake" >> $GITHUB_ENV
           echo "NINJA_BIN=$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}/bin/ninja" >> $GITHUB_ENV
           
-          # Check if SDK is already cached
           if [ -d "$SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}" ] && [ -d "$SDK_ROOT/cmake/${{ env.ANDROID_CMAKE_VERSION }}" ]; then
             echo "Android SDK found in cache, skipping download"
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
@@ -54,14 +53,12 @@ jobs:
             mkdir -p "$SDK_ROOT"
             cd "$SDK_ROOT"
             CLI_ZIP="commandlinetools-linux_latest.zip"
-            # official commandline tools (file name may be updated over time)
             wget -q -O ${CLI_ZIP} https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
             unzip -q ${CLI_ZIP} -d "$SDK_ROOT/cmdline-tools-temp"
             mkdir -p "$SDK_ROOT/cmdline-tools/latest"
             mv "$SDK_ROOT/cmdline-tools-temp/cmdline-tools/"* "$SDK_ROOT/cmdline-tools/latest/"
             rm -rf "$SDK_ROOT/cmdline-tools-temp" ${CLI_ZIP}
             export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-            # accept licenses (ignore the benign broken-pipe from 'yes')
             yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
             sdkmanager --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-30" "cmake;${{ env.ANDROID_CMAKE_VERSION }}" "ndk;${{ env.ANDROID_NDK_VERSION }}" "build-tools;33.0.0"
           fi
@@ -79,14 +76,10 @@ jobs:
       - name: Clone and build OpenCV
         run: |
           set -euo pipefail
-          
-          # Check if OpenCV is already cached
           if [ -d "$HOME/opencv-install" ] && [ -f "$HOME/opencv-install/sdk/native/jni/OpenCVConfig.cmake" ]; then
             echo "OpenCV found in cache, skipping build"
             exit 0
           fi
-          
-          echo "OpenCV not in cache, building..."
           git clone --depth 1 https://github.com/opencv/opencv.git
           git clone --depth 1 https://github.com/opencv/opencv_contrib.git
           cd opencv
@@ -132,20 +125,14 @@ jobs:
       - name: Build SQLite3 for Android
         run: |
           set -euo pipefail
-          
-          # Check if SQLite3 is already cached
           if [ -d "$HOME/sqlite3-install" ] && [ -f "$HOME/sqlite3-install/lib/libsqlite3.a" ]; then
             echo "SQLite3 found in cache, skipping build"
             exit 0
           fi
-          
-          echo "SQLite3 not in cache, building..."
           cd /tmp
           wget -q https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
           unzip -q sqlite-amalgamation-3460000.zip
           cd sqlite-amalgamation-3460000
-          
-          # Create Android makefile
           cat > Android.mk << 'EOF'
           LOCAL_PATH := $(call my-dir)
           include $(CLEAR_VARS)
@@ -154,25 +141,16 @@ jobs:
           LOCAL_CFLAGS := -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE
           include $(BUILD_STATIC_LIBRARY)
           EOF
-          
-          # Use NDK to build
           mkdir -p $HOME/sqlite3-install/lib $HOME/sqlite3-install/include
-          
-          # Compile sqlite3.c directly with clang
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
             -c sqlite3.c \
             -o sqlite3.o \
             -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS4 -DSQLITE_ENABLE_RTREE \
             -O2 -fPIC
-          
-          # Create static library
           $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs libsqlite3.a sqlite3.o
-          
-          # Install
           cp libsqlite3.a $HOME/sqlite3-install/lib/
           cp sqlite3.h $HOME/sqlite3-install/include/
           cp sqlite3ext.h $HOME/sqlite3-install/include/
-          
           echo "SQLite3 built and installed to $HOME/sqlite3-install"
 
       - name: Cache SQLite3 immediately after build
@@ -184,11 +162,9 @@ jobs:
 
       - name: Prepare nlohmann/json for Android
         run: |
-          # Copy entire nlohmann directory to a location accessible during Android compilation
           mkdir -p $HOME/nlohmann-json-install/include
           cp -rv /usr/include/nlohmann $HOME/nlohmann-json-install/include/
           echo "Copied nlohmann directory to $HOME/nlohmann-json-install/include/"
-          echo "Contents of nlohmann-json-install:"
           find $HOME/nlohmann-json-install/include/nlohmann -name "*.hpp" | head -10
 
       - name: Cache OpenBLAS and FAISS
@@ -217,27 +193,20 @@ jobs:
           WORK_DIR="$HOME/faiss_openblas_work"
           BUILD_DIR="$WORK_DIR/build"
           build_subdir="$BUILD_DIR/openblas_${ANDROID_ABI}"
-          
-          # Check if OpenBLAS is already cached
           if [ -f "$build_subdir/lib/libopenblas.a" ]; then
             echo "OpenBLAS found in cache, skipping build"
             echo "$build_subdir/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
             exit 0
           fi
-          
-          echo "OpenBLAS not in cache, building..."
           SCRIPT_DIR="$PWD"
           SRC_DIR="$WORK_DIR/src"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
-          # clone OpenBLAS (same branch/tag as script)
           if [ ! -d "$SRC_DIR/OpenBLAS" ]; then
             git clone --recursive -b "$OPENBLAS_TAG" https://github.com/xianyi/OpenBLAS.git OpenBLAS
           fi
-          # build OpenBLAS for the ABI (cmake args are the same as in the original script)
           mkdir -p "$build_subdir"
           pushd "$build_subdir"
-          echo "Configuring OpenBLAS (ABI=${ANDROID_ABI})"
           "$CMAKE_BIN" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
@@ -257,10 +226,6 @@ jobs:
             "$SRC_DIR/OpenBLAS"
           ${NINJA_BIN}
           popd
-          echo "::group::OpenBLAS build output"
-          ls -la "$BUILD_DIR/openblas_${ANDROID_ABI}" || true
-          echo "::endgroup::"
-          # expose the lib path for subsequent steps via a marker file
           echo "$BUILD_DIR/openblas_${ANDROID_ABI}/lib/libopenblas.a" > "$WORK_DIR/openblas_lib_path.txt"
           echo "OpenBLAS lib path recorded to $WORK_DIR/openblas_lib_path.txt"
 
@@ -275,33 +240,25 @@ jobs:
         run: |
           set -euo pipefail
           WORK_DIR="$HOME/faiss_openblas_work"
-          
-          # Check if FAISS is already cached
           if [ -d "$HOME/faiss-install" ] && [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
             echo "FAISS found in cache, skipping build"
             exit 0
           fi
-          
-          echo "FAISS not in cache, building..."
           SRC_DIR="$WORK_DIR/src"
           BUILD_DIR="$WORK_DIR/build"
           mkdir -p "$SRC_DIR" "$BUILD_DIR"
           cd "$SRC_DIR"
-          # clone faiss (same branch/tag as script)
           if [ ! -d "$SRC_DIR/faiss" ]; then
             git clone --recursive -b "$FAISS_TAG" https://github.com/facebookresearch/faiss.git faiss
           fi
-          # read openblas lib path written by previous step
           OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt || true)"
           if [ -z "$OPENBLAS_LIB_PATH" ]; then
             echo "ERROR: openblas lib path not found (expected $WORK_DIR/openblas_lib_path.txt)"
             exit 1
           fi
-          # configure and build FAISS with the same cmake args as the script (note: we pass MKL_LIBRARIES as in the script)
           abi_build_dir="$BUILD_DIR/faiss_${ANDROID_ABI}"
           mkdir -p "$abi_build_dir"
           pushd "$abi_build_dir"
-          echo "Configuring FAISS (ABI=${ANDROID_ABI})"
           "$CMAKE_BIN" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
@@ -325,20 +282,11 @@ jobs:
             "$SRC_DIR/faiss"
           ${NINJA_BIN}
           popd
-          echo "::group::FAISS build output"
-          ls -la "$BUILD_DIR/faiss_${ANDROID_ABI}" || true
-          echo "::endgroup::"
-          # install into a faiss-install dir similar to script expectations
           mkdir -p $HOME/faiss-install/lib $HOME/faiss-install/include
-          # Copy library files to the lib directory
-          echo "Copying FAISS library files..."
           find "$BUILD_DIR/faiss_${ANDROID_ABI}" -type f -name "libfaiss*" -print0 | while IFS= read -r -d '' file; do
             cp -v "$file" $HOME/faiss-install/lib/
           done
-          # Copy header files from source
-          echo "Copying FAISS header files..."
-          cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/
-          # Create a minimal CMake config for FAISS discovery
+          cp -rv "$SRC_DIR/faiss/faiss" $HOME/faiss-install/include/ || true
           mkdir -p $HOME/faiss-install/lib/cmake/faiss
           cat > $HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake << 'EOF'
           # Minimal FAISS config
@@ -348,64 +296,16 @@ jobs:
             INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/../../../include"
           )
           EOF
-          echo "FAISS artifacts copied to $HOME/faiss-install"
-          
-          # Debug: List what was actually installed
-          echo "::group::FAISS installation verification"
-          echo "Contents of $HOME/faiss-install:"
-          find $HOME/faiss-install -type f 2>/dev/null | head -20 || true
-          echo "Contents of $HOME/faiss-install/lib:"
-          ls -la $HOME/faiss-install/lib/ 2>/dev/null || echo "lib directory not found"
-          echo "Contents of $HOME/faiss-install/include:"
-          ls -la $HOME/faiss-install/include/ 2>/dev/null || echo "include directory not found"
-          echo "Checking for required FAISS library file:"
-          if [ -f "$HOME/faiss-install/lib/libfaiss.so" ]; then
-            echo "✓ FAISS library found: $HOME/faiss-install/lib/libfaiss.so"
-          else
-            echo "✗ FAISS library NOT found at expected location"
-            echo "Searching for libfaiss files:"
-            find $HOME/faiss-install -name "libfaiss*" -type f 2>/dev/null || true
-          fi
-          echo "::endgroup::"
-
-      - name: Verify OpenBLAS library exists
-        run: |
-          WORK_DIR="$HOME/faiss_openblas_work"
-          
-          # Try to get the path from the marker file first
-          OPENBLAS_LIB_PATH="$(cat $WORK_DIR/openblas_lib_path.txt 2>/dev/null || true)"
-          
-          # If not found in marker file, try to find it in the expected location
-          if [ -z "$OPENBLAS_LIB_PATH" ]; then
-            OPENBLAS_LIB_PATH="$WORK_DIR/build/openblas_${ANDROID_ABI}/lib/libopenblas.a"
-            echo "$OPENBLAS_LIB_PATH" > "$WORK_DIR/openblas_lib_path.txt"
-          fi
-          
-          if [ ! -f "$OPENBLAS_LIB_PATH" ]; then
-            echo "::error::Required OpenBLAS static library not found at $OPENBLAS_LIB_PATH"
-            echo "Searching for OpenBLAS libraries..."
-            find "$WORK_DIR" -name "libopenblas*" -type f 2>/dev/null || true
-            ls -al "$(dirname "$OPENBLAS_LIB_PATH")" 2>/dev/null || true
-            exit 1
-          fi
-          echo "Found OpenBLAS: $OPENBLAS_LIB_PATH"
 
       - name: Configure and build project (final)
         run: |
           echo "::group::Pre-build verification"
-          echo "FAISS installation check:"
           ls -la $HOME/faiss-install/ || echo "faiss-install not found"
           ls -la $HOME/faiss-install/lib/ || echo "faiss-install/lib not found"
           ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
-          echo "SQLite3 installation check:"
           ls -la $HOME/sqlite3-install/ || echo "sqlite3-install not found"
-          ls -la $HOME/sqlite3-install/lib/ || echo "sqlite3-install not found"
-          echo "nlohmann_json header check:"
           ls -la $HOME/nlohmann-json-install/include/nlohmann/ || echo "nlohmann-json-install not found"
           echo "::endgroup::"
-          
-
-          # remove any existing build directory
           rm -rf build
           mkdir -p build && cd build
           cmake .. \
@@ -431,8 +331,6 @@ jobs:
           set -euo pipefail
           ABI_DIR="build/native-libs/${{ env.ANDROID_ABI }}"
           mkdir -p "$ABI_DIR"
-
-          # determine expected ELF token for target ABI
           case "${{ env.ANDROID_ABI }}" in
             arm64-v8a) MACHINE_TOKEN="AArch64" ;;
             armeabi-v7a) MACHINE_TOKEN="ARM" ;;
@@ -440,16 +338,11 @@ jobs:
             x86_64) MACHINE_TOKEN="x86-64" ;;
             *) MACHINE_TOKEN="" ;;
           esac
-          echo "Target ABI: ${{ env.ANDROID_ABI }} (expect ELF Machine token: $MACHINE_TOKEN)"
-
-          # Helper: check ELF Machine for a candidate file
           matches_abi() {
             local file="$1"
             [ -z "$MACHINE_TOKEN" ] && return 0
             readelf -h "$file" 2>/dev/null | awk -v token="$MACHINE_TOKEN" 'tolower($0) ~ tolower(token) {found=1} END{exit !found}'
           }
-
-          # Safe copy helper (avoid copying file onto itself)
           safe_copy() {
             local src="$1"
             local dest="$ABI_DIR/$(basename "$src")"
@@ -467,53 +360,25 @@ jobs:
             echo "copying $src -> $dest"
             cp -v "$src" "$dest"
           }
-
           found_any=0
-
-          # 1) Look specifically for libomp*.so under the NDK (if set) using process substitution
           if [ -n "${NDK_ROOT:-}" ] && [ -d "$NDK_ROOT" ]; then
-            echo "Searching NDK at $NDK_ROOT for libomp*.so..."
             while IFS= read -r -d '' lib; do
-              echo "candidate: $lib"
               if matches_abi "$lib"; then
                 safe_copy "$lib"
                 found_any=1
-              else
-                echo "  -> candidate does NOT match target ABI token ($MACHINE_TOKEN); skipping"
               fi
             done < <(find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null)
           fi
-
-          # 2) Also try looking in faiss build & install dirs (where a cross-built runtime might be)
           for d in "$HOME/faiss-install/lib" "$HOME/faiss_openblas_work/build/faiss_${{ env.ANDROID_ABI }}" "$HOME"; do
             if [ -d "$d" ]; then
               while IFS= read -r -d '' lib; do
-                echo "candidate: $lib"
                 if matches_abi "$lib"; then
                   safe_copy "$lib"
                   found_any=1
-                else
-                  echo "  -> candidate does NOT match target ABI ($MACHINE_TOKEN); skipping"
                 fi
               done < <(find "$d" -type f -name "libomp*.so" -print0 2>/dev/null)
             fi
           done
-
-          if [ "$found_any" -eq 0 ]; then
-            echo "No AArch64 libomp found in NDK/faiss/search dirs."
-            echo "Debug: listing all libomp candidates (with ELF Machine) under NDK root for inspection:"
-            if [ -n "${NDK_ROOT:-}" ]; then
-              while IFS= read -r -d '' lib; do
-                printf "%s -> " "$lib"
-                readelf -h "$lib" 2>/dev/null | awk '/Machine/ {print $0; exit}' || true
-              done < <(find "$NDK_ROOT" -type f -name "libomp*.so" -print0 2>/dev/null)
-            fi
-            # do not fail — caller will handle missing runtime
-            exit 0
-          fi
-
-          echo "Resulting collected libs in $ABI_DIR:"
-          ls -la "$ABI_DIR" || true
 
       - name: Collect libc++_shared.so
         shell: bash
@@ -521,126 +386,111 @@ jobs:
           set -euo pipefail
           ABI_DIR="build/native-libs/${ANDROID_ABI}"
           mkdir -p "$ABI_DIR"
-
-          echo "Searching for libc++_shared.so in common NDK locations..."
           found=""
-          # Candidate locations (NDK layout varies by version)
           candidates=(
             "$NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so"
             "$NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
             "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
             "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${ANDROID_ABI}/libc++_shared.so"
           )
-
           for f in "${candidates[@]}"; do
             if [ -f "$f" ]; then
-              echo "Found candidate: $f"
               cp -v "$f" "$ABI_DIR/"
               found=1
               break
             fi
           done
-
           if [ -z "${found:-}" ]; then
-            echo "Not found in standard locations — falling back to scanning the NDK for libc++_shared.so (may find multiple archs)..."
             while IFS= read -r -d '' file; do
-              # verify ELF machine (best-effort) and copy the first matching file
-              echo "candidate: $file"
               cp -v "$file" "$ABI_DIR/" && found=1 && break
             done < <(find "$NDK_ROOT" -type f -name "libc++_shared.so" -print0 2>/dev/null)
           fi
 
-          if [ -z "${found:-}" ]; then
-            echo "::warning::libc++_shared.so not found in NDK or expected locations. Artifact won't include it."
-          else
-            echo "libc++_shared.so copied to $ABI_DIR"
-          fi
-
-          ls -la "$ABI_DIR" || true
-
-      - name: Package FAISS for Android Studio (jniLibs + headers)
+      - name: Package FAISS for Android Studio (jniLibs + headers)  # CHANGED: single staging dir
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_DIR="$HOME/android-artifacts"
+          ARTIFACT_ROOT="$HOME/android-artifacts-root"
+          rm -rf "$ARTIFACT_ROOT"
           ABI="$ANDROID_ABI"
-          ABI_JNI_DIR="$ARTIFACT_DIR/jniLibs/$ABI"
-          mkdir -p "$ABI_JNI_DIR"
-          mkdir -p "$ARTIFACT_DIR/include"
-          mkdir -p "$ARTIFACT_DIR/cmake"
+          JNI_DIR="$ARTIFACT_ROOT/jniLibs/$ABI"
+          mkdir -p "$JNI_DIR"
+          mkdir -p "$ARTIFACT_ROOT/include"
+          mkdir -p "$ARTIFACT_ROOT/lib"
+          mkdir -p "$ARTIFACT_ROOT/cmake"
+          echo "Staging artifacts into $ARTIFACT_ROOT"
 
-          echo "Packaging FAISS shared libs into: $ABI_JNI_DIR"
-          # Prefer libfaiss*.so found in faiss-install/lib, fall back to build dir
+          # 1) collect libfaiss*.so -> jniLibs/<ABI>/libfaiss.so
           found_lib=0
-          for candidate in $(find "$HOME/faiss-install/lib" -maxdepth 1 -type f -name "libfaiss*.so" 2>/dev/null) ; do
+          for candidate in $(find "$HOME/faiss-install/lib" -maxdepth 1 -type f -name "libfaiss*.so" 2>/dev/null); do
             echo "Found libfaiss candidate: $candidate"
-            cp -v "$candidate" "$ABI_JNI_DIR/libfaiss.so"
+            cp -v "$candidate" "$JNI_DIR/libfaiss.so"
             found_lib=1
             break
           done
           if [ "$found_lib" -eq 0 ]; then
-            echo "No libfaiss in $HOME/faiss-install/lib; searching faiss build output..."
-            for candidate in $(find "$HOME/faiss_openblas_work/build/faiss_${ABI}" -type f -name "libfaiss*.so" 2>/dev/null) ; do
+            for candidate in $(find "$HOME/faiss_openblas_work/build/faiss_${ABI}" -type f -name "libfaiss*.so" 2>/dev/null); do
               echo "Found libfaiss build candidate: $candidate"
-              cp -v "$candidate" "$ABI_JNI_DIR/libfaiss.so"
+              cp -v "$candidate" "$JNI_DIR/libfaiss.so"
               found_lib=1
               break
             done
           fi
-
           if [ "$found_lib" -eq 0 ]; then
-            echo "::warning::libfaiss.so not found — the artifact will not contain the FAISS shared library."
-          else
-            echo "libfaiss.so packaged at $ABI_JNI_DIR/libfaiss.so"
+            echo "::warning::libfaiss.so not found; jniLibs will be missing it"
           fi
 
-          # Copy any collected runtime libs (libc++_shared.so, libomp*.so) from build/native-libs/<ABI>
+          # 2) include runtime .so files collected into build/native-libs/<ABI> (libc++_shared.so, libomp*.so)
           if [ -d "build/native-libs/$ABI" ]; then
-            echo "Copying additional runtime libs from build/native-libs/$ABI -> $ABI_JNI_DIR"
-            cp -v build/native-libs/$ABI/* "$ABI_JNI_DIR/" || true
+            echo "Copying runtime libs from build/native-libs/$ABI to jniLibs..."
+            cp -v build/native-libs/$ABI/* "$JNI_DIR/" 2>/dev/null || true
           fi
+          # Also scan faiss-install/lib for runtime libs (if any)
+          for runtime in "$HOME/faiss-install/lib"/libc++_shared.so "$HOME/faiss-install/lib"/libomp*.so; do
+            if [ -f "$runtime" ]; then
+              cp -v "$runtime" "$JNI_DIR/" || true
+            fi
+          done
 
-          # If the packaging didn't find libc++_shared or libomp in build/native-libs, try faiss-install/lib
-          if [ -d "$HOME/faiss-install/lib" ]; then
-            echo "Also scanning $HOME/faiss-install/lib for runtime libs to include..."
-            for l in "$HOME/faiss-install/lib"/libc++_shared.so "$HOME/faiss-install/lib"/libomp*.so; do
-              if [ -f "$l" ]; then
-                cp -v "$l" "$ABI_JNI_DIR/" || true
-              fi
-            done
-          fi
-
-          # Copy header files (FAISS headers)
+          # 3) copy FAISS headers (full tree) into include/faiss
           if [ -d "$HOME/faiss-install/include" ]; then
-            echo "Copying FAISS headers to $ARTIFACT_DIR/include/"
-            cp -rv "$HOME/faiss-install/include/"* "$ARTIFACT_DIR/include/" || true
+            cp -rv "$HOME/faiss-install/include/"* "$ARTIFACT_ROOT/include/" || true
           else
-            echo "::warning::FAISS include directory not found at $HOME/faiss-install/include"
+            echo "::warning::FAISS include dir not found at $HOME/faiss-install/include"
           fi
 
-          # Optional: create a tiny README and a minimal cmake snippet to help consumers
-          cat > "$ARTIFACT_DIR/README_FAISS_ANDROID.md" <<'EOF'
-          This package contains:
-            - jniLibs/<ABI>/libfaiss.so  (FAISS shared library for the target ABI)
-            - jniLibs/<ABI>/*.so         (possible runtime libs such as libc++_shared.so, libomp*.so)
-            - include/                   (FAISS header tree, suitable for CMake include directories)
+          # 4) copy libopenblas (static) (optional) into lib/
+          OPENBLAS_PATH="$(cat $HOME/faiss_openblas_work/openblas_lib_path.txt 2>/dev/null || true || true)"
+          if [ -z "$OPENBLAS_PATH" ]; then
+            OPENBLAS_PATH="$HOME/faiss_openblas_work/build/openblas_${ABI}/lib/libopenblas.a"
+          fi
+          if [ -f "$OPENBLAS_PATH" ]; then
+            cp -v "$OPENBLAS_PATH" "$ARTIFACT_ROOT/lib/" || true
+          fi
 
-          To consume in Android Studio:
-            1) Copy the jniLibs directory under app/src/main/jniLibs/
-            2) Copy include/ to a safe location and use target_include_directories or include_directories() in your CMakeLists.txt
-            3) Link against libfaiss in CMake via find_library() or by adding an IMPORTED library with the correct path.
+          # 5) include faissConfig.cmake if present
+          if [ -f "$HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake" ]; then
+            mkdir -p "$ARTIFACT_ROOT/cmake/faiss"
+            cp -v "$HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake" "$ARTIFACT_ROOT/cmake/faiss/" || true
+          fi
+
+          # 6) add helper README
+          cat > "$ARTIFACT_ROOT/README_FAISS_ANDROID.md" <<'EOF'
+          Layout:
+            - jniLibs/<ABI>/libfaiss.so (and possible runtime .so like libc++_shared.so, libomp*.so)
+            - include/... (FAISS headers)
+            - lib/*.a (optional static libs like libopenblas.a)
+            - cmake/faiss/faissConfig.cmake (optional)
+          To use: copy jniLibs into app/src/main/jniLibs/ and point your include paths to the include/ tree.
           EOF
 
-          echo "Packaged files:"
-          find "$ARTIFACT_DIR" -maxdepth 3 -type f -print || true
+          echo "::group::artifact listing"
+          find "$ARTIFACT_ROOT" -type f -print || true
+          echo "::endgroup::"
 
-      - name: Upload build artifacts
+      - name: Upload build artifacts (single root directory)
         uses: actions/upload-artifact@v4
         with:
           name: android-build-output
-          path: |
-            build/
-            build/native-libs/
-            $HOME/faiss-install/lib/
-            $HOME/faiss-install/include/
-            $HOME/android-artifacts/
+          path: $HOME/android-artifacts-root
+
