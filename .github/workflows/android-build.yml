@@ -406,91 +406,33 @@ jobs:
             done < <(find "$NDK_ROOT" -type f -name "libc++_shared.so" -print0 2>/dev/null)
           fi
 
-      - name: Package FAISS for Android Studio (jniLibs + headers)  # CHANGED: single staging dir
-        shell: bash
-        run: |
-          set -euo pipefail
-          ARTIFACT_ROOT="$HOME/android-artifacts-root"
-          rm -rf "$ARTIFACT_ROOT"
-          ABI="$ANDROID_ABI"
-          JNI_DIR="$ARTIFACT_ROOT/jniLibs/$ABI"
-          mkdir -p "$JNI_DIR"
-          mkdir -p "$ARTIFACT_ROOT/include"
-          mkdir -p "$ARTIFACT_ROOT/lib"
-          mkdir -p "$ARTIFACT_ROOT/cmake"
-          echo "Staging artifacts into $ARTIFACT_ROOT"
+      - name: Upload open-cv artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-cv-android-artifacts
+          path: /home/runner/opencv-install/
 
-          # 1) collect libfaiss*.so -> jniLibs/<ABI>/libfaiss.so
-          found_lib=0
-          for candidate in $(find "$HOME/faiss-install/lib" -maxdepth 1 -type f -name "libfaiss*.so" 2>/dev/null); do
-            echo "Found libfaiss candidate: $candidate"
-            cp -v "$candidate" "$JNI_DIR/libfaiss.so"
-            found_lib=1
-            break
-          done
-          if [ "$found_lib" -eq 0 ]; then
-            for candidate in $(find "$HOME/faiss_openblas_work/build/faiss_${ABI}" -type f -name "libfaiss*.so" 2>/dev/null); do
-              echo "Found libfaiss build candidate: $candidate"
-              cp -v "$candidate" "$JNI_DIR/libfaiss.so"
-              found_lib=1
-              break
-            done
-          fi
-          if [ "$found_lib" -eq 0 ]; then
-            echo "::warning::libfaiss.so not found; jniLibs will be missing it"
-          fi
+      - name: Upload FAISS Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: faiss-android-artifacts
+          path: /home/runner/android-artifacts-root/
 
-          # 2) include runtime .so files collected into build/native-libs/<ABI> (libc++_shared.so, libomp*.so)
-          if [ -d "build/native-libs/$ABI" ]; then
-            echo "Copying runtime libs from build/native-libs/$ABI to jniLibs..."
-            cp -v build/native-libs/$ABI/* "$JNI_DIR/" 2>/dev/null || true
-          fi
-          # Also scan faiss-install/lib for runtime libs (if any)
-          for runtime in "$HOME/faiss-install/lib"/libc++_shared.so "$HOME/faiss-install/lib"/libomp*.so; do
-            if [ -f "$runtime" ]; then
-              cp -v "$runtime" "$JNI_DIR/" || true
-            fi
-          done
+      - name: Upload SQLite3 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite3-android-artifacts
+          path: /home/runner/sqlite3-install/
 
-          # 3) copy FAISS headers (full tree) into include/faiss
-          if [ -d "$HOME/faiss-install/include" ]; then
-            cp -rv "$HOME/faiss-install/include/"* "$ARTIFACT_ROOT/include/" || true
-          else
-            echo "::warning::FAISS include dir not found at $HOME/faiss-install/include"
-          fi
+      - name: Upload nlohmann-json artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlohmann-json-android-artifacts
+          path: /home/runner/nlohmann-json-install/
 
-          # 4) copy libopenblas (static) (optional) into lib/
-          OPENBLAS_PATH="$(cat $HOME/faiss_openblas_work/openblas_lib_path.txt 2>/dev/null || true || true)"
-          if [ -z "$OPENBLAS_PATH" ]; then
-            OPENBLAS_PATH="$HOME/faiss_openblas_work/build/openblas_${ABI}/lib/libopenblas.a"
-          fi
-          if [ -f "$OPENBLAS_PATH" ]; then
-            cp -v "$OPENBLAS_PATH" "$ARTIFACT_ROOT/lib/" || true
-          fi
-
-          # 5) include faissConfig.cmake if present
-          if [ -f "$HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake" ]; then
-            mkdir -p "$ARTIFACT_ROOT/cmake/faiss"
-            cp -v "$HOME/faiss-install/lib/cmake/faiss/faissConfig.cmake" "$ARTIFACT_ROOT/cmake/faiss/" || true
-          fi
-
-          # 6) add helper README
-          cat > "$ARTIFACT_ROOT/README_FAISS_ANDROID.md" <<'EOF'
-          Layout:
-            - jniLibs/<ABI>/libfaiss.so (and possible runtime .so like libc++_shared.so, libomp*.so)
-            - include/... (FAISS headers)
-            - lib/*.a (optional static libs like libopenblas.a)
-            - cmake/faiss/faissConfig.cmake (optional)
-          To use: copy jniLibs into app/src/main/jniLibs/ and point your include paths to the include/ tree.
-          EOF
-
-          echo "::group::artifact listing"
-          find "$ARTIFACT_ROOT" -type f -print || true
-          echo "::endgroup::"
-
-      - name: Upload build artifacts (single root directory)
+      - name: Upload Android build output
         uses: actions/upload-artifact@v4
         with:
           name: android-build-output
-          path: /home/runner/
+          path: /home/runner/build/
 
