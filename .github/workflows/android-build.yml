@@ -399,7 +399,7 @@ jobs:
           ls -la $HOME/faiss-install/lib/cmake/faiss/ || echo "faiss cmake config not found"
           echo "SQLite3 installation check:"
           ls -la $HOME/sqlite3-install/ || echo "sqlite3-install not found"
-          ls -la $HOME/sqlite3-install/lib/ || echo "sqlite3-install/lib not found"
+          ls -la $HOME/sqlite3-install/lib/ || echo "sqlite3-install not found"
           echo "nlohmann_json header check:"
           ls -la $HOME/nlohmann-json-install/include/nlohmann/ || echo "nlohmann-json-install not found"
           echo "::endgroup::"
@@ -513,6 +513,49 @@ jobs:
           fi
 
           echo "Resulting collected libs in $ABI_DIR:"
+          ls -la "$ABI_DIR" || true
+
+      - name: Collect libc++_shared.so
+        shell: bash
+        run: |
+          set -euo pipefail
+          ABI_DIR="build/native-libs/${ANDROID_ABI}"
+          mkdir -p "$ABI_DIR"
+
+          echo "Searching for libc++_shared.so in common NDK locations..."
+          found=""
+          # Candidate locations (NDK layout varies by version)
+          candidates=(
+            "$NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so"
+            "$NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+            "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+            "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${ANDROID_ABI}/libc++_shared.so"
+          )
+
+          for f in "${candidates[@]}"; do
+            if [ -f "$f" ]; then
+              echo "Found candidate: $f"
+              cp -v "$f" "$ABI_DIR/"
+              found=1
+              break
+            fi
+          done
+
+          if [ -z "${found:-}" ]; then
+            echo "Not found in standard locations — falling back to scanning the NDK for libc++_shared.so (may find multiple archs)..."
+            while IFS= read -r -d '' file; do
+              # verify ELF machine (best-effort) and copy the first matching file
+              echo "candidate: $file"
+              cp -v "$file" "$ABI_DIR/" && found=1 && break
+            done < <(find "$NDK_ROOT" -type f -name "libc++_shared.so" -print0 2>/dev/null)
+          fi
+
+          if [ -z "${found:-}" ]; then
+            echo "::warning::libc++_shared.so not found in NDK or expected locations. Artifact won't include it."
+          else
+            echo "libc++_shared.so copied to $ABI_DIR"
+          fi
+
           ls -la "$ABI_DIR" || true
 
       - name: Upload build artifacts
