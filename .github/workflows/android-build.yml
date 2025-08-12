@@ -404,6 +404,9 @@ jobs:
           ls -la $HOME/nlohmann-json-install/include/nlohmann/ || echo "nlohmann-json-install not found"
           echo "::endgroup::"
           
+
+          # remove any existing build directory
+          rm -rf build
           mkdir -p build && cd build
           cmake .. \
            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
